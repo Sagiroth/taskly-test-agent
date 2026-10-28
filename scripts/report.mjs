@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // Evaluates an agent run from facts and writes the pull request comment.
-// Reads .test-agent/: agent.jsonl (opencode log), agent-report.json, guard.json, result.json.
+// Reads .test-agent/: agent.jsonl (opencode log), agent-report.json, guard.json, result.json and,
+// in review mode, review-comments.json.
 //
 // Writes .test-agent/comment.md, the job summary and the step outputs
 // `commit` (true when the agent's tests are green and allowed) and `ok` (false makes the check red).
@@ -16,8 +17,10 @@ const logText = readText(file('agent.jsonl'));
 const log = logText === null ? null : parseAgentLog(logText);
 const report = normalizeReport(readJsonIfValid(file('agent-report.json')));
 const tests = readJsonIfValid(file('result.json'));
-const outcome = evaluate({ agentStep: process.env.AGENT_STEP ?? 'skipped', log, report, guard: readJsonIfValid(file('guard.json')), tests });
-const comment = renderComment({ outcome, report, log, tests, runUrl: process.env.RUN_URL });
+// Present only in review mode: the comments the agent was asked to answer.
+const reviewRequests = readJsonIfValid(file('review-comments.json')) ?? [];
+const outcome = evaluate({ agentStep: process.env.AGENT_STEP ?? 'skipped', log, report, guard: readJsonIfValid(file('guard.json')), tests, reviewRequests });
+const comment = renderComment({ outcome, report, log, tests, runUrl: process.env.RUN_URL, reviewRequests });
 
 writeFile(file('comment.md'), comment);
 appendSummary(comment);
