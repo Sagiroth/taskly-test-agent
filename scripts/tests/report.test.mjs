@@ -80,6 +80,14 @@ test('lists the skills from the run log and diff coverage gaps', () => {
   assert.match(comment, /`backend\/src\/x.ts` uncovered lines: 4-5/);
 });
 
+test('shows how the agent changed its plan after the gap checklist', () => {
+  const report = normalizeReport({ planChecks: ['Missing: empty list returns 0. Added a case.'] });
+  const comment = renderComment({ outcome: evaluate({ ...base, report }), report, log, tests: null });
+
+  assert.match(comment, /### Plan review[\s\S]*- Missing: empty list returns 0. Added a case./);
+  assert.equal(normalizeReport({ planChecks: 'not a list' }).planChecks.length, 0);
+});
+
 test('neutralises HTML, mentions and table breaks in agent text', () => {
   assert.equal(inline('<img src=x>\n@octocat `x`'), "&lt;img src=x&gt; @\u200boctocat 'x'");
   const report = normalizeReport({ decisions: [{ file: 'a|b', action: 'skip', reason: 'one | two' }] });

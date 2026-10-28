@@ -10,6 +10,7 @@ export function normalizeReport(report) {
     acceptanceCriteria: { source: String(criteria.source ?? 'none'), items: list(criteria.items) },
     decisions: list(report.decisions),
     tests: list(report.tests).map((item) => ({ ...item, covers: Array.isArray(item.covers) ? item.covers.map(String) : [] })),
+    planChecks: Array.isArray(report.planChecks) ? report.planChecks.map(String) : [],
     possibleRegressions: list(report.possibleRegressions),
     suspectedBugs: list(report.suspectedBugs),
   };
@@ -83,6 +84,12 @@ export function renderComment({ outcome, report, log, tests, runUrl }) {
   if (report?.tests.length) {
     lines.push('### Tests written or updated', '', '| File | Status | Covers |', '|---|---|---|');
     for (const test of report.tests) lines.push(`| \`${cell(test.file)}\` | ${cell(test.status)} | ${cell(test.covers.join(', '))} |`);
+    lines.push('');
+  }
+
+  if (report?.planChecks.length) {
+    lines.push('### Plan review', '', 'Gaps the agent found in its own test plan (gap checklist of `unit-test-standards`) and how the plan changed:', '');
+    for (const check of report.planChecks) lines.push(`- ${inline(check)}`);
     lines.push('');
   }
 
