@@ -32,3 +32,82 @@ it.each([{ title: '  ' }, { title: 'x'.repeat(121) }, { title: 'Task', priority:
     expect(repository.create).not.toHaveBeenCalled();
   },
 );
+it('gets a task by ID', async () => {
+  const { app, repository } = setup();
+  repository.get.mockResolvedValue(todo);
+  const response = await request(app).get('/api/todos/1');
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual(todo);
+  expect(repository.get).toHaveBeenCalledWith(1);
+});
+it('returns 404 when getting a missing task', async () => {
+  const { app, repository } = setup();
+  repository.get.mockResolvedValue(null);
+  const response = await request(app).get('/api/todos/99');
+  expect(response.status).toBe(404);
+  expect(response.body).toEqual({ detail: 'Task not found.' });
+});
+it.each(['0', '-1', '1.5', 'abc', '9007199254740992'])('rejects invalid ID %s on every ID route without calling the repository', async (id) => {
+  const { app, repository } = setup();
+  const responses = [
+    await request(app).get(`/api/todos/${id}`),
+    await request(app).patch(`/api/todos/${id}`).send({ completed: true }),
+    await request(app).delete(`/api/todos/${id}`),
+  ];
+  expect(responses.map((response) => response.status)).toEqual([422, 422, 422]);
+  expect(responses[0].body.detail).toContainEqual(expect.objectContaining({ path: [] }));
+  expect(repository.get).not.toHaveBeenCalled();
+  expect(repository.update).not.toHaveBeenCalled();
+  expect(repository.delete).not.toHaveBeenCalled();
+});
+it('updates a task with trimmed fields', async () => {
+  const { app, repository } = setup();
+  repository.update.mockResolvedValue({ ...todo, title: 'Renamed', completed: true });
+  const response = await request(app).patch('/api/todos/1').send({ title: '  Renamed  ', completed: true });
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({ ...todo, title: 'Renamed', completed: true });
+  expect(repository.update).toHaveBeenCalledWith(1, { title: 'Renamed', completed: true });
+});
+it('clears a due date with null', async () => {
+  const { app, repository } = setup();
+  repository.update.mockResolvedValue({ ...todo, due_date: null });
+  const response = await request(app).patch('/api/todos/1').send({ due_date: null });
+  expect(response.status).toBe(200);
+  expect(repository.update).toHaveBeenCalledWith(1, { due_date: null });
+});
+it('returns 404 when updating a missing task', async () => {
+  const { app, repository } = setup();
+  repository.update.mockResolvedValue(null);
+  const response = await request(app).patch('/api/todos/99').send({ completed: true });
+  expect(response.status).toBe(404);
+  expect(response.body).toEqual({ detail: 'Task not found.' });
+});
+it.each([{}, { id: 2 }, { title: '  ' }, { priority: 'urgent' }, { due_date: '2026-02-30' }, { completed: 'yes' }, { title: null }])(
+  'rejects invalid update input without calling the repository: %j', async (payload) => {
+    const { app, repository } = setup();
+    const response = await request(app).patch('/api/todos/1').send(payload);
+    expect(response.status).toBe(422);
+    expect(Array.isArray(response.body.detail)).toBe(true);
+    expect(repository.update).not.toHaveBeenCalled();
+  },
+);
+it('explains that an empty patch needs at least one field', async () => {
+  const { app } = setup();
+  const response = await request(app).patch('/api/todos/1').send({});
+  expect(response.body.detail).toEqual([expect.objectContaining({ message: 'Provide at least one field to update.' })]);
+});
+it('deletes a task and returns 204 without a body', async () => {
+  const { app, repository } = setup();
+  repository.delete.mockResolvedValue(true);
+  const response = await request(app).delete('/api/todos/1');
+  expect(response.status).toBe(204);
+  expect(response.text).toBe('');
+  expect(repository.delete).toHaveBeenCalledWith(1);
+});
+it('returns 404 when deleting a missing task', async () => {
+  const { app, repository } = setup();
+  repository.delete.mockResolvedValue(false);
+  const response = await request(app).delete('/api/todos/99');
+  expect(response.status).toBe(404);
+  expect(response.body).toEqual({ detail: 'Task not found.' });
+});
