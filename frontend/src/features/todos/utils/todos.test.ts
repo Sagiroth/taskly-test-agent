@@ -66,6 +66,27 @@ describe('selectTodos', () => {
     )
   })
 
+  it('sorts archived tasks by priority with the archived filter', () => {
+    const low: Todo = { ...base, id: 2, priority: 'low', archived: true }
+    const high: Todo = { ...base, id: 3, priority: 'high', archived: true }
+    const medium: Todo = {
+      ...base,
+      id: 4,
+      completed: true,
+      archived: true,
+    }
+    const otherHigh: Todo = {
+      ...base,
+      id: 5,
+      priority: 'high',
+      completed: true,
+      archived: true,
+    }
+    expect(
+      selectTodos([low, high, medium, otherHigh], 'archived', '', 'priority'),
+    ).toEqual([otherHigh, high, medium, low])
+  })
+
   it('searches case-insensitively in the title', () => {
     const other: Todo = { ...base, id: 2, title: 'Buy milk' }
     expect(selectTodos([base, other], 'all', 'SPRINT', 'newest')).toEqual([
