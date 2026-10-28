@@ -15,6 +15,7 @@ permissions:
   contents: write # push the agent's tests to the PR branch
   pull-requests: write # comment on the PR
   issues: read # read linked issues (acceptance criteria)
+  actions: write # start ci.yml for the agent's commit
 
 concurrency:
   group: test-agent-${{ github.event.pull_request.number }}
@@ -136,6 +137,8 @@ jobs:
           git commit -m "test: add unit tests for #${PR_NUMBER}" -m "Written by the test agent and verified by scripts/run-tests.mjs."
           if git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"; then
             printf '\nTests committed to this branch in %s.\n' "$(git rev-parse HEAD)" >> .test-agent/comment.md
+            # The push above does not trigger workflows, so CI is started explicitly for the new commit.
+            gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
           else
             printf '\n⚠️ Pushing the tests failed (the branch probably moved). The next push to this PR runs the agent again.\n' >> .test-agent/comment.md
             exit 1
