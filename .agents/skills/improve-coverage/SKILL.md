@@ -5,6 +5,8 @@ description: Find the least covered files in a package or directory and plan mea
 
 # Improve coverage
 
+In the opencode TUI this mode starts with `/cover <scope>`, e.g. `/cover backend/src` or `/cover frontend/src/features/todos/hooks`.
+
 ## Iron rules
 
 - Coverage is a map, not a goal. Plan tests for behaviours that matter; a line covered by an assertion-free test does not count.
