@@ -10,6 +10,10 @@ on:
     paths:
       - 'backend/src/**'
       - 'frontend/src/**'
+      # Frontend tests live next to the source: changes to them alone do not start the agent.
+      - '!frontend/src/**/*.test.ts'
+      - '!frontend/src/**/*.test.tsx'
+      - '!frontend/src/test/**'
 
 permissions:
   contents: write # push the agent's tests to the PR branch
