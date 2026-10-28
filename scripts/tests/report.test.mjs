@@ -58,6 +58,18 @@ test('reported regressions and bugs need attention without failing the check', (
   assert.deepEqual(pick(evaluate({ ...base, report })), { ok: true, commit: true, status: 'attention' });
 });
 
+test('green tests that leave an acceptance criterion untested need attention, not "tests added"', () => {
+  const criteria = { source: 'issue #2', items: [{ id: 'AC1', text: 'a' }, { id: 'AC2', text: 'b' }] };
+  const partial = normalizeReport({ acceptanceCriteria: criteria, tests: [{ file: 'backend/tests/a.test.ts', covers: ['AC1'] }] });
+  const complete = normalizeReport({ acceptanceCriteria: criteria, tests: [{ file: 'backend/tests/a.test.ts', covers: ['AC1', 'AC2'] }] });
+  const outcome = evaluate({ ...base, report: partial });
+
+  assert.deepEqual(pick(outcome), { ok: true, commit: true, status: 'attention' });
+  assert.deepEqual(outcome.warnings, ['Acceptance criteria without a test: AC2.']);
+  assert.match(renderComment({ outcome, report: partial, log, tests: null }), /^- Acceptance criteria without a test: AC2\.$/m);
+  assert.equal(evaluate({ ...base, report: complete }).status, 'added');
+});
+
 test('commits nothing when the guard rejects the changes, the agent fails or no test result exists', () => {
   const rejected = { ok: false, violations: [{ path: 'backend/src/app.ts', reason: 'not a test file' }], changed: [{ status: 'M', path: 'backend/src/app.ts' }] };
   const cases = [

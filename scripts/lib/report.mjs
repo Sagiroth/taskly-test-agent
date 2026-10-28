@@ -44,10 +44,18 @@ export function evaluate({ agentStep, log, report, guard, tests }) {
     if (pkg.thresholdErrors?.length) problems.push(`${name}: coverage thresholds not met.`);
   }
 
+  // Findings that need a human but do not make the check red: the tests that exist are green.
+  const warnings = [];
+  const covered = new Set(report?.tests.flatMap((test) => test.covers) ?? []);
+  const uncovered = (report?.acceptanceCriteria.items ?? []).filter((item) => !covered.has(String(item.id)));
+  if (uncovered.length) warnings.push(`Acceptance criteria without a test: ${uncovered.map((item) => item.id).join(', ')}.`);
+  if (report?.possibleRegressions.length) warnings.push(`${report.possibleRegressions.length} possible regression(s) reported.`);
+  if (report?.suspectedBugs.length) warnings.push(`${report.suspectedBugs.length} suspected bug(s) reported.`);
+
   const commit = changed.size > 0 && brokenByAgent.length === 0 && Boolean(tests);
-  const attention = problems.length > 0 || (report?.possibleRegressions.length ?? 0) > 0 || (report?.suspectedBugs.length ?? 0) > 0;
+  const attention = problems.length > 0 || warnings.length > 0;
   const status = attention ? 'attention' : commit ? 'added' : 'not-needed';
-  return { ok: problems.length === 0, commit, status, problems, changedFiles: [...changed], brokenFiles: [...brokenByAgent, ...brokenElsewhere] };
+  return { ok: problems.length === 0, commit, status, problems, warnings, changedFiles: [...changed], brokenFiles: [...brokenByAgent, ...brokenElsewhere] };
 }
 
 const HEADLINES = {
@@ -59,8 +67,8 @@ const HEADLINES = {
 export function renderComment({ outcome, report, log, tests, runUrl }) {
   const lines = [COMMENT_MARKER, `## Test agent: ${HEADLINES[outcome.status]}`, ''];
   if (report?.summary) lines.push(`> ${inline(report.summary)}`, '');
-  for (const problem of outcome.problems) lines.push(`- ${inline(problem)}`);
-  if (outcome.problems.length) lines.push('');
+  for (const item of [...outcome.problems, ...outcome.warnings]) lines.push(`- ${inline(item)}`);
+  if (outcome.problems.length || outcome.warnings.length) lines.push('');
 
   if (report?.decisions.length) {
     lines.push('### Decisions', '', '| File | Action | Reason |', '|---|---|---|');
