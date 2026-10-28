@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { createSchema, updateSchema, idSchema, todoSchema } from '../src/features/todos/validators.ts';
+import { createSchema, updateSchema, idSchema, todoSchema, listQuerySchema } from '../src/features/todos/validators.ts';
 import { todo } from './fixture.ts';
 
 describe('todo validation', () => {
@@ -29,6 +29,26 @@ describe('todo validation', () => {
     expect(updateSchema.safeParse({ [field]: null }).success).toBe(false);
   });
   it('forbids extra patch fields', () => expect(updateSchema.safeParse({ id: 1 }).success).toBe(false));
+  it.each([false, true])('accepts archived %s in patches', (archived) => {
+    expect(updateSchema.parse({ archived })).toEqual({ archived });
+  });
+  it.each([null, 'false', 0])('rejects non-boolean archived %j in patches', (archived) => {
+    expect(updateSchema.safeParse({ archived }).success).toBe(false);
+  });
+  it('does not accept archived when creating tasks', () => {
+    expect(createSchema.safeParse({ title: 'Task', archived: true }).success).toBe(false);
+  });
+  it.each([{}, { archived: 'true' }])('accepts the list query %j', (query) => {
+    expect(listQuerySchema.parse(query)).toEqual(query);
+  });
+  it.each(['false', 'TRUE', '1', '', ['true', 'true']])('rejects the list query archived=%j', (archived) => {
+    expect(listQuerySchema.safeParse({ archived }).success).toBe(false);
+  });
+  it('requires archived in the response schema', () => {
+    const { archived: _archived, ...withoutArchived } = todo;
+    expect(todoSchema.safeParse(withoutArchived).success).toBe(false);
+    expect(todoSchema.parse({ ...todo, archived: true })).toEqual({ ...todo, archived: true });
+  });
   it.each(['0', '-1', '1.5', 'abc', '9007199254740992'])('rejects invalid id %s', (id) => {
     expect(idSchema.safeParse(id).success).toBe(false);
   });

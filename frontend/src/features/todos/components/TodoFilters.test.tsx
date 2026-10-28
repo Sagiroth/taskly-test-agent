@@ -28,3 +28,23 @@ it('displays controlled values and forwards all filter changes', async () => {
   expect(screen.getByLabelText('Status')).toHaveValue('completed')
   expect(screen.getByLabelText('Sort by')).toHaveValue('due')
 })
+
+it('offers the archived status and forwards selecting it', async () => {
+  const user = userEvent.setup()
+  const onFilterChange = vi.fn()
+  render(
+    <TodoFilters
+      filter="all"
+      search=""
+      sort="newest"
+      onFilterChange={onFilterChange}
+      onSearchChange={vi.fn()}
+      onSortChange={vi.fn()}
+    />,
+  )
+  expect(
+    screen.getAllByRole('option').map((option) => option.textContent),
+  ).toEqual(expect.arrayContaining(['All statuses', 'To do', 'Completed', 'Archived']))
+  await user.selectOptions(screen.getByLabelText('Status'), 'Archived')
+  expect(onFilterChange).toHaveBeenCalledExactlyOnceWith('archived')
+})
