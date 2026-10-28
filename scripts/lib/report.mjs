@@ -30,12 +30,15 @@ export function evaluate({ agentStep, log, report, guard, tests }) {
 
   const changed = new Set(guard?.ok ? guard.changed.map((entry) => entry.path) : []);
   const packages = Object.entries(tests?.packages ?? {});
-  const broken = packages.flatMap(([, pkg]) => [...(pkg.failures ?? []), ...(pkg.flaky ?? [])]);
-  const brokenByAgent = unique(broken.filter((item) => changed.has(item.file)).map((item) => item.file));
-  const brokenElsewhere = unique(broken.filter((item) => !changed.has(item.file)).map((item) => item.file));
+  const failing = packages.flatMap(([, pkg]) => [...(pkg.failures ?? []), ...(pkg.flaky ?? [])]);
+  const typeErrors = packages.flatMap(([, pkg]) => pkg.typecheck?.errors ?? []);
+  const brokenByAgent = unique([...failing, ...typeErrors].filter((item) => changed.has(item.file)).map((item) => item.file));
+  const brokenElsewhere = unique(failing.filter((item) => !changed.has(item.file)).map((item) => item.file));
+  const typeErrorsElsewhere = unique(typeErrors.filter((item) => !changed.has(item.file)).map((item) => item.file ?? 'project configuration'));
 
-  if (brokenByAgent.length) problems.push(`Tests written by the agent fail or are flaky, so they were not committed: ${brokenByAgent.join(', ')}.`);
+  if (brokenByAgent.length) problems.push(`Tests written by the agent fail, are flaky or do not compile, so they were not committed: ${brokenByAgent.join(', ')}.`);
   if (brokenElsewhere.length) problems.push(`Existing tests fail: ${brokenElsewhere.join(', ')}.`);
+  if (typeErrorsElsewhere.length) problems.push(`Type errors outside the agent's tests: ${typeErrorsElsewhere.join(', ')}.`);
   for (const [name, pkg] of packages) {
     if (pkg.error) problems.push(`${name}: ${pkg.error.split('\n')[0]}`);
     if (pkg.thresholdErrors?.length) problems.push(`${name}: coverage thresholds not met.`);
@@ -122,19 +125,24 @@ export function renderComment({ outcome, report, log, tests, runUrl }) {
 
 function renderTestRun(tests) {
   const lines = ['### Test run', '', 'Independent full run of `node scripts/run-tests.mjs` after the agent finished.', ''];
-  lines.push('| Package | Passed | Failed | Flaky | Lines | Branches |', '|---|---|---|---|---|---|');
+  lines.push('| Package | Passed | Failed | Flaky | Type errors | Lines | Branches |', '|---|---|---|---|---|---|---|');
   for (const [name, pkg] of Object.entries(tests.packages)) {
     if (pkg.error) {
-      lines.push(`| ${name} | error | | | | |`);
+      lines.push(`| ${name} | error | | | | | |`);
       continue;
     }
     const total = pkg.coverage?.total;
-    lines.push(`| ${name} | ${pkg.tests.passed} | ${pkg.tests.failed} | ${pkg.tests.flaky} | ${total ? `${total.lines}%` : '-'} | ${total ? `${total.branches}%` : '-'} |`);
+    lines.push(`| ${name} | ${pkg.tests.passed} | ${pkg.tests.failed} | ${pkg.tests.flaky} | ${pkg.typecheck?.count ?? '-'} | ${total ? `${total.lines}%` : '-'} | ${total ? `${total.branches}%` : '-'} |`);
   }
   const failures = Object.values(tests.packages).flatMap((pkg) => pkg.failures ?? []);
   if (failures.length) {
     lines.push('', 'Failures:', '');
     for (const failure of failures.slice(0, 10)) lines.push(`- \`${inline(failure.file)}\`${failure.test ? ` > ${inline(failure.test)}` : ''}: ${inline(failure.message)}`);
+  }
+  const typeErrors = Object.values(tests.packages).flatMap((pkg) => pkg.typecheck?.errors ?? []);
+  if (typeErrors.length) {
+    lines.push('', 'Type errors (`tsc --noEmit`):', '');
+    for (const error of typeErrors.slice(0, 10)) lines.push(`- \`${inline(error.file ?? 'tsconfig')}${error.line ? `:${error.line}` : ''}\`: ${inline(error.message)}`);
   }
 
   const diff = tests.diffCoverage;

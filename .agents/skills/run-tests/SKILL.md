@@ -35,6 +35,7 @@ Developers can run the same script as `npm run test:agent -- <options>` from the
       "failures": [{ "file": "backend/tests/x.test.ts", "test": "group > name", "message": "AssertionError: ..." }],
       "flaky": [],
       "thresholdErrors": [],
+      "typecheck": { "ok": false, "count": 1, "errors": [{ "file": "backend/tests/x.test.ts", "line": 12, "code": "TS2322", "message": "Type 'string' is not assignable to type 'number'." }] },
       "coverage": { "total": { "lines": 80 }, "lowest": [{ "file": "backend/src/...", "lines": 0 }] }
     }
   },
@@ -45,6 +46,7 @@ Developers can run the same script as `npm run test:agent -- <options>` from the
 - `failures` with `test: null`: the test file did not load (import or syntax error).
 - `flaky`: the test passed only on rerun. Treat it as a defect of your test: remove the source of non-determinism.
 - `thresholdErrors`: coverage thresholds in `vitest.config.ts` are not met. Add tests; never change thresholds.
+- `typecheck`: result of `tsc --noEmit` for the package. Vitest does not check types, but CI does: a test with type errors is not done, even when it passes.
 - `--related` mode does not enforce thresholds; always finish with a full run.
 
 ## Failure modes
@@ -55,6 +57,7 @@ Developers can run the same script as `npm run test:agent -- <options>` from the
 | Permission denied for the command | Command not in the allowed form | Use exactly `node scripts/run-tests.mjs ...` from the root |
 | Your new test fails after 3 rounds | Wrong expectation or a bug in the code | Re-read the code: if the code is wrong, report a suspected bug and remove the test; otherwise remove the test and report why |
 | An existing test fails | Intended change or regression | Follow the update vs regression rule in `analyze-pr-diff` |
+| `typecheck.errors` in your test file | Wrong types in the test (fixtures, mocks, props) | Fix the types in the test; never use `any`, `@ts-ignore` or `@ts-expect-error` to silence them |
 
 ## Success token
 

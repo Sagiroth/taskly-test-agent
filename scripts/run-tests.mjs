@@ -1,9 +1,10 @@
 #!/usr/bin/env node
-// Runs the Vitest suites and writes a compact, machine-readable result.
+// Typechecks and runs the Vitest suites, and writes a compact, machine-readable result.
 // One source of truth for test results: used by the test agent, the agent workflow and developers.
 //
 // Uses the same Vitest binary and vitest.config.ts as the package scripts (npm test, npm run test:coverage),
-// so results match; it only adds machine-readable output and an isolated environment.
+// so results match; it only adds machine-readable output and an isolated environment. Vitest does not check types,
+// so `tsc --noEmit` (the package `typecheck` script) runs too: CI rejects tests that do not compile.
 //
 // Usage (also available as: npm run test:agent -- <options>):
 //   node scripts/run-tests.mjs [--pkg backend|frontend|all] [--base <git-ref>] [--out <file>]
@@ -23,6 +24,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { diffCoverage, summarizeCoverage, toRepoPath } from './lib/coverage.mjs';
 import { parseAddedLines } from './lib/diff.mjs';
+import { parseTypecheck } from './lib/typecheck.mjs';
 import { parseThresholdErrors, splitFlaky, summarizeReport } from './lib/vitest-report.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -143,9 +145,10 @@ function runPackage(pkg, relatedFiles) {
     `--coverage.reportsDirectory=${coverageDir}`,
   );
 
-  const run = runVitest(vitest, pkgDir, args, path.join(outDir, 'vitest.log'));
+  const run = runTool(vitest, pkgDir, args, path.join(outDir, 'vitest.log'));
+  const typecheck = runTypecheck(pkgDir, pkg, path.join(outDir, 'tsc.log'));
   if (!existsSync(reportFile)) {
-    return { result: { ok: false, exitCode: run.status, error: lastLines(run.log, 20) }, final: {} };
+    return { result: { ok: false, exitCode: run.status, error: lastLines(run.log, 20), typecheck }, final: {} };
   }
 
   const report = summarizeReport(readJson(reportFile), ROOT);
@@ -160,7 +163,7 @@ function runPackage(pkg, relatedFiles) {
 
   return {
     result: {
-      ok: failures.length === 0 && flaky.length === 0 && thresholdErrors.length === 0,
+      ok: failures.length === 0 && flaky.length === 0 && thresholdErrors.length === 0 && typecheck.ok,
       exitCode: run.status,
       tests: {
         total: report.total,
@@ -172,6 +175,7 @@ function runPackage(pkg, relatedFiles) {
       failures,
       flaky,
       thresholdErrors,
+      typecheck,
       coverage: coverageSummary ? summarizeCoverage(coverageSummary, ROOT) : null,
       coverageAll: coverageSummary,
     },
@@ -183,12 +187,22 @@ function runPackage(pkg, relatedFiles) {
 function rerunFailures(vitest, pkgDir, outDir, failures) {
   const files = [...new Set(failures.map((failure) => path.join(ROOT, failure.file)))];
   const reportFile = path.join(outDir, 'vitest-rerun.json');
-  runVitest(vitest, pkgDir, ['run', ...files, '--reporter=json', `--outputFile=${reportFile}`], path.join(outDir, 'vitest-rerun.log'));
+  runTool(vitest, pkgDir, ['run', ...files, '--reporter=json', `--outputFile=${reportFile}`], path.join(outDir, 'vitest-rerun.log'));
   return existsSync(reportFile) ? summarizeReport(readJson(reportFile), ROOT) : null;
 }
 
-function runVitest(vitest, cwd, args, logFile) {
-  const run = spawnSync(vitest, args, {
+// Same check as the package `typecheck` script (tsc --noEmit), with machine-readable output.
+function runTypecheck(pkgDir, pkg, logFile) {
+  const tsc = path.join(pkgDir, 'node_modules', '.bin', 'tsc');
+  if (!existsSync(tsc)) return { ok: false, count: 1, errors: [{ file: null, line: null, code: null, message: `TypeScript is not installed, run "npm ci" in ${pkg}/` }] };
+  const run = runTool(tsc, pkgDir, ['--noEmit', '--pretty', 'false'], logFile);
+  const result = parseTypecheck(run.log, pkg);
+  if (run.status !== 0 && result.ok) return { ok: false, count: 1, errors: [{ file: null, line: null, code: null, message: lastLines(run.log, 5) }] };
+  return result;
+}
+
+function runTool(command, cwd, args, logFile) {
+  const run = spawnSync(command, args, {
     cwd,
     env: TEST_ENV,
     encoding: 'utf8',
@@ -235,12 +249,13 @@ function printSummary(result, outFile) {
     const { passed, failed, flaky } = summary.tests;
     const total = summary.coverage?.total;
     const coverage = total ? ` | lines ${total.lines}% statements ${total.statements}%` : '';
-    console.log(`${pkg.padEnd(9)} ${passed} passed, ${failed} failed, ${flaky} flaky${coverage}`);
+    console.log(`${pkg.padEnd(9)} ${passed} passed, ${failed} failed, ${flaky} flaky, ${summary.typecheck.count} type errors${coverage}`);
     for (const failure of summary.failures) {
       console.log(`  FAIL  ${failure.file}${failure.test ? ` > ${failure.test}` : ''}: ${failure.message}`);
     }
     for (const test of summary.flaky) console.log(`  FLAKY ${test.file}${test.test ? ` > ${test.test}` : ''}`);
     for (const error of summary.thresholdErrors) console.log(`  THRESHOLD ${error}`);
+    for (const error of summary.typecheck.errors) console.log(`  TYPE  ${error.file ? `${error.file}:${error.line} ` : ''}${error.message}`);
   }
   if (result.ignored) console.log(`ignored (outside packages): ${result.ignored.join(', ')}`);
   if (result.diffCoverage) {

@@ -4,7 +4,14 @@ import { COMMENT_MARKER, evaluate, inline, normalizeReport, renderComment } from
 
 const log = { result: 'TESTS-GREEN', errors: [], skills: ['analyze-pr-diff'], tools: { edit: 2 }, failedCalls: [], steps: 5, tokens: { input: 1, output: 1, reasoning: 0, cacheRead: 0, cacheWrite: 0 }, cost: 0.1 };
 const guard = (...paths) => ({ ok: true, violations: [], changed: paths.map((path) => ({ status: 'A', path })) });
-const pkg = ({ failures = [], flaky = [], thresholdErrors = [] } = {}) => ({ ok: !failures.length, tests: { passed: 3, failed: failures.length, flaky: flaky.length }, failures, flaky, thresholdErrors });
+const pkg = ({ failures = [], flaky = [], thresholdErrors = [], typeErrors = [] } = {}) => ({
+  ok: !failures.length,
+  tests: { passed: 3, failed: failures.length, flaky: flaky.length },
+  failures,
+  flaky,
+  thresholdErrors,
+  typecheck: { ok: !typeErrors.length, count: typeErrors.length, errors: typeErrors },
+});
 const tests = (backend = pkg(), frontend = pkg()) => ({ ok: true, packages: { backend, frontend } });
 const base = { agentStep: 'success', log, report: normalizeReport({ summary: 'ok' }), guard: guard('backend/tests/a.test.ts'), tests: tests() };
 
@@ -16,8 +23,13 @@ test('reports no tests needed when the agent changed nothing', () => {
   assert.deepEqual(pick(evaluate({ ...base, guard: guard() })), { ok: true, commit: false, status: 'not-needed' });
 });
 
-test('never commits failing or flaky tests written by the agent', () => {
-  for (const backend of [pkg({ failures: [{ file: 'backend/tests/a.test.ts' }] }), pkg({ flaky: [{ file: 'backend/tests/a.test.ts' }] })]) {
+test('never commits failing, flaky or non-compiling tests written by the agent', () => {
+  const broken = [
+    pkg({ failures: [{ file: 'backend/tests/a.test.ts' }] }),
+    pkg({ flaky: [{ file: 'backend/tests/a.test.ts' }] }),
+    pkg({ typeErrors: [{ file: 'backend/tests/a.test.ts', line: 3, message: 'not assignable' }] }),
+  ];
+  for (const backend of broken) {
     assert.deepEqual(pick(evaluate({ ...base, tests: tests(backend) })), { ok: false, commit: false, status: 'attention' });
   }
 });
@@ -29,6 +41,15 @@ test('commits green agent tests but turns the check red when existing tests or t
   assert.deepEqual(pick(regression), { ok: false, commit: true, status: 'attention' });
   assert.match(regression.problems[0], /Existing tests fail: backend\/tests\/router.test.ts/);
   assert.deepEqual(pick(threshold), { ok: false, commit: true, status: 'attention' });
+});
+
+test('type errors outside the agent tests turn the check red but keep its green tests', () => {
+  const outcome = evaluate({ ...base, tests: tests(pkg({ typeErrors: [{ file: 'backend/src/app.ts', line: 1, message: 'x' }] })) });
+  const comment = renderComment({ outcome, report: base.report, log, tests: tests(pkg({ typeErrors: [{ file: 'backend/src/app.ts', line: 1, message: 'x' }] })) });
+
+  assert.deepEqual(pick(outcome), { ok: false, commit: true, status: 'attention' });
+  assert.match(outcome.problems[0], /Type errors outside the agent's tests: backend\/src\/app.ts/);
+  assert.match(comment, /- `backend\/src\/app.ts:1`: x/);
 });
 
 test('reported regressions and bugs need attention without failing the check', () => {
