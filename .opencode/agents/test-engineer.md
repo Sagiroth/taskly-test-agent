@@ -4,7 +4,12 @@ mode: primary
 steps: 80
 permission:
   "*": deny
-  read: allow
+  # Local environment files may hold real credentials; keep them out of the model context.
+  read:
+    "*": allow
+    "*.env": deny
+    "*.env.*": deny
+    "*.env.example": allow
   glob: allow
   grep: allow
   list: allow
