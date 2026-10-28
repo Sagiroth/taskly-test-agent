@@ -1,0 +1,9 @@
+{
+  "name": "taskly-test-agent",
+  "private": true,
+  "description": "Repository-level tooling for the AI test agent. The application packages live in backend/ and frontend/.",
+  "scripts": {
+    "test:agent": "node scripts/run-tests.mjs",
+    "test:scripts": "node --test 'scripts/tests/*.test.mjs'"
+  }
+}

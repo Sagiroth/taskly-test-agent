@@ -70,4 +70,4 @@ jobs:
           node-version: 24
 
       - name: Unit tests of the agent scripts
-        run: node --test 'scripts/tests/*.test.mjs'
+        run: npm run test:scripts

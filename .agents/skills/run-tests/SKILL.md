@@ -22,6 +22,8 @@ description: How to run the backend and frontend test suites with scripts/run-te
 
 The script prints a short summary and writes the full result to `.test-agent/result.json`. Read that file for details.
 
+Developers can run the same script as `npm run test:agent -- <options>` from the root. Agents must call `node scripts/run-tests.mjs` directly: it is the only command they are allowed to run.
+
 ## Reading the result
 
 ```json

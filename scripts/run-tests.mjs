@@ -2,7 +2,10 @@
 // Runs the Vitest suites and writes a compact, machine-readable result.
 // One source of truth for test results: used by the test agent, the agent workflow and developers.
 //
-// Usage:
+// Uses the same Vitest binary and vitest.config.ts as the package scripts (npm test, npm run test:coverage),
+// so results match; it only adds machine-readable output and an isolated environment.
+//
+// Usage (also available as: npm run test:agent -- <options>):
 //   node scripts/run-tests.mjs [--pkg backend|frontend|all] [--base <git-ref>] [--out <file>]
 //   node scripts/run-tests.mjs --related <changed files...>
 //
@@ -12,7 +15,7 @@
 //   --out      Result file (default: .test-agent/result.json).
 //
 // Exit code: 0 when every executed package is green, 1 otherwise, 2 on usage errors.
-// Tests of this script: node --test 'scripts/tests/*.test.mjs'
+// Tests of this script: npm run test:scripts
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';

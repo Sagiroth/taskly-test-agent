@@ -13,6 +13,10 @@ description: Conventions and patterns for unit tests in backend/ (Express 5, Pri
 - Reuse `backend/tests/fixture.ts` (`record` is a database row, `todo` is the API shape). Extend it only when a new field is needed by several tests.
 - Only `.ts` test files under `backend/tests/` may be created or changed.
 
+## Running
+
+Agents run tests with the `run-tests` skill. Developers can also use the package scripts in `backend/` (`npm test`, `npm run test:coverage`); both use the same `vitest.config.ts`, so results match.
+
 ## Style
 
 - Semicolons, single quotes. Match the file you edit: flat `it(...)` blocks (`router.test.ts`) or a `describe` group (`validators.test.ts`).

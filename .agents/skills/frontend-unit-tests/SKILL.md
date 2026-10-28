@@ -13,6 +13,10 @@ description: Conventions and patterns for unit tests in frontend/ (React 19, Tan
 - Interact with `userEvent.setup()`, not `fireEvent`.
 - Reuse `src/test/todoFixture.ts` (`todoFixture`) and override fields with spread: `{ ...todoFixture, completed: true }`.
 
+## Running
+
+Agents run tests with the `run-tests` skill. Developers can also use the package scripts in `frontend/` (`npm test`, `npm run test:coverage`); both use the same `vite.config.ts`, so results match.
+
 ## Style
 
 Prettier settings of the package: no semicolons, single quotes, trailing commas, 2-space indent, imports from `vitest` explicit (`import { expect, it, vi } from 'vitest'`). You cannot run Prettier, so write it in this style directly.
