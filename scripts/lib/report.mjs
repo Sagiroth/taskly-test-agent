@@ -13,6 +13,7 @@ export function normalizeReport(report) {
     planChecks: Array.isArray(report.planChecks) ? report.planChecks.map(String) : [],
     possibleRegressions: list(report.possibleRegressions),
     suspectedBugs: list(report.suspectedBugs),
+    reviewComments: list(report.reviewComments).map((item) => ({ id: Number(item.id), status: String(item.status ?? ''), reply: String(item.reply ?? '') })),
   };
 }
 
@@ -20,7 +21,8 @@ export function normalizeReport(report) {
 //   agentStep: outcome of the agent step (success | failure | cancelled | skipped)
 //   log: parseAgentLog result, report: normalizeReport result
 //   guard: checkChanges result, tests: result of scripts/run-tests.mjs
-export function evaluate({ agentStep, log, report, guard, tests }) {
+//   reviewRequests: review comments given to the agent in review mode (see selectReviewComments)
+export function evaluate({ agentStep, log, report, guard, tests, reviewRequests = [] }) {
   const problems = [];
   if (agentStep !== 'success') problems.push(`The agent step did not finish (${agentStep}).`);
   for (const error of log?.errors ?? []) problems.push(`Agent error: ${error}`);
@@ -51,6 +53,9 @@ export function evaluate({ agentStep, log, report, guard, tests }) {
   if (uncovered.length) warnings.push(`Acceptance criteria without a test: ${uncovered.map((item) => item.id).join(', ')}.`);
   if (report?.possibleRegressions.length) warnings.push(`${report.possibleRegressions.length} possible regression(s) reported.`);
   if (report?.suspectedBugs.length) warnings.push(`${report.suspectedBugs.length} suspected bug(s) reported.`);
+  const answered = new Set(report?.reviewComments.map((item) => item.id) ?? []);
+  const unanswered = reviewRequests.filter((comment) => !answered.has(comment.id));
+  if (unanswered.length) warnings.push(`Review comments without an answer from the agent: ${unanswered.map((comment) => comment.id).join(', ')}.`);
 
   const commit = changed.size > 0 && brokenByAgent.length === 0 && Boolean(tests);
   const attention = problems.length > 0 || warnings.length > 0;
@@ -64,7 +69,12 @@ const HEADLINES = {
   attention: '⚠️ Needs attention',
 };
 
-export function renderComment({ outcome, report, log, tests, runUrl }) {
+export function workingComment({ review, runUrl }) {
+  const task = review ? 'addressing review comments' : 'analysing the changes and writing tests';
+  return [COMMENT_MARKER, '## Test agent: ⏳ Working', '', `The agent is ${task}. This comment is replaced with the result when the run finishes.`, '', runUrl ? `[Workflow run](${runUrl})` : '', ''].join('\n');
+}
+
+export function renderComment({ outcome, report, log, tests, runUrl, reviewRequests = [] }) {
   const lines = [COMMENT_MARKER, `## Test agent: ${HEADLINES[outcome.status]}`, ''];
   if (report?.summary) lines.push(`> ${inline(report.summary)}`, '');
   for (const item of [...outcome.problems, ...outcome.warnings]) lines.push(`- ${inline(item)}`);
@@ -73,6 +83,17 @@ export function renderComment({ outcome, report, log, tests, runUrl }) {
   if (report?.decisions.length) {
     lines.push('### Decisions', '', '| File | Action | Reason |', '|---|---|---|');
     for (const item of report.decisions) lines.push(`| \`${cell(item.file)}\` | ${cell(item.action)} | ${cell(item.reason)} |`);
+    lines.push('');
+  }
+
+  if (reviewRequests.length) {
+    const answers = new Map(report?.reviewComments.map((item) => [item.id, item]) ?? []);
+    lines.push('### Review comments', '', '| Comment | Status | Answer |', '|---|---|---|');
+    for (const comment of reviewRequests) {
+      const answer = answers.get(comment.id);
+      const where = comment.path ? ` on \`${cell(comment.path)}${comment.line ? `:${comment.line}` : ''}\`` : '';
+      lines.push(`| [${cell(comment.author)}](${comment.url})${where} | ${answer ? cell(answer.status) : 'no answer'} | ${answer ? cell(answer.reply) : '-'} |`);
+    }
     lines.push('');
   }
 
@@ -93,7 +114,7 @@ export function renderComment({ outcome, report, log, tests, runUrl }) {
   }
 
   if (report?.tests.length) {
-    lines.push('### Tests written or updated', '', '| File | Status | Covers |', '|---|---|---|');
+    lines.push('### Tests covering the change', '', '| File | Status | Covers |', '|---|---|---|');
     for (const test of report.tests) lines.push(`| \`${cell(test.file)}\` | ${cell(test.status)} | ${cell(test.covers.join(', '))} |`);
     lines.push('');
   }

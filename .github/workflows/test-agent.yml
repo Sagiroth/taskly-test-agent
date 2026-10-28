@@ -5,7 +5,8 @@ name: Test agent
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
+    # labeled: a maintainer asks the agent to address review comments with the label "test-agent: address-review".
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
     # Only application code needs new tests; PRs with tests, docs or config only do not start the agent.
     paths:
       - 'backend/src/**'
@@ -21,9 +22,11 @@ permissions:
   issues: read # read linked issues (acceptance criteria)
   actions: write # start ci.yml for the agent's commit
 
+# One run per PR. A new push cancels the running one (its result would be stale); a review request waits instead.
+# Unrelated labels get their own group, so adding one never cancels or replaces a real run.
 concurrency:
-  group: test-agent-${{ github.event.pull_request.number }}
-  cancel-in-progress: true
+  group: "test-agent-${{ github.event.pull_request.number }}${{ github.event.action == 'labeled' && github.event.label.name != 'test-agent: address-review' && '-ignored' || '' }}"
+  cancel-in-progress: ${{ github.event.action != 'labeled' }}
 
 env:
   OPENCODE_VERSION: 2.2.0
@@ -36,13 +39,17 @@ jobs:
     if: >-
       github.event.pull_request.draft == false &&
       github.event.pull_request.head.repo.full_name == github.repository &&
-      github.actor != 'github-actions[bot]'
+      github.actor != 'github-actions[bot]' &&
+      (github.event.action != 'labeled' || github.event.label.name == 'test-agent: address-review')
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
       PR_NUMBER: ${{ github.event.pull_request.number }}
       BASE_SHA: ${{ github.event.pull_request.base.sha }}
       HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      REVIEW_LABEL: 'test-agent: address-review'
+      REVIEW_MODE: ${{ github.event.action == 'labeled' }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -57,6 +64,17 @@ jobs:
           cache-dependency-path: |
             backend/package-lock.json
             frontend/package-lock.json
+
+      # The label is removed first, so it can be added again for the next round, even if this run fails.
+      - name: Show that the agent is working
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "$REVIEW_MODE" = true ]; then
+            label=$(node -p 'encodeURIComponent(process.env.REVIEW_LABEL)')
+            gh api -X DELETE "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/labels/${label}" > /dev/null
+          fi
+          node scripts/pr-comment.mjs --working
 
       - name: Install dependencies
         run: |
@@ -94,6 +112,8 @@ jobs:
           fi
           echo "Changed files:"; cat "$dir/changed-files.txt"
           echo "Linked issues: ${issues:-none}"
+          # Review mode: trusted reviewer comments not handled yet, marked with 👀.
+          if [ "$REVIEW_MODE" = true ]; then node scripts/review-comments.mjs; fi
 
       - name: Run test agent
         id: agent
@@ -108,6 +128,9 @@ jobs:
           prompt="Mode: PR. Write or update unit tests for the changes of pull request #${PR_NUMBER}. \
           The context is in .test-agent/context/ (pr.md, issue.md when an issue is linked, changed-files.txt, diff.patch). \
           Use --base ${BASE_SHA} for diff coverage."
+          if [ -f .test-agent/context/review-comments.md ]; then
+            prompt="${prompt} Review mode: also answer every comment in .test-agent/context/review-comments.md."
+          fi
           # stdin must be closed, otherwise opencode run waits for input forever.
           opencode run --standalone --agent test-engineer -m "$MODEL" --format json "$prompt" </dev/null > .test-agent/agent.jsonl
 
@@ -127,7 +150,6 @@ jobs:
         id: report
         env:
           AGENT_STEP: ${{ steps.agent.outcome }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: node scripts/report.mjs
 
       # A push with GITHUB_TOKEN does not trigger workflows again, so the agent cannot loop on its own commit.
@@ -144,6 +166,7 @@ jobs:
           node -e "for (const e of require('./.test-agent/guard.json').changed) process.stdout.write(e.path + '\0')" | xargs -0 git add --
           git commit -m "test: add unit tests for #${PR_NUMBER}" -m "Written by the test agent and verified by scripts/run-tests.mjs."
           if git push "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${HEAD_REF}"; then
+            echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
             printf '\nTests committed to this branch in %s.\n' "$(git rev-parse HEAD)" >> .test-agent/comment.md
             # The push above does not trigger workflows, so CI is started explicitly for the new commit.
             gh workflow run ci.yml --repo "$GITHUB_REPOSITORY" --ref "$HEAD_REF"
@@ -152,19 +175,19 @@ jobs:
             exit 1
           fi
 
+      - name: Reply to review comments
+        if: always() && env.REVIEW_MODE == 'true' && steps.report.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          COMMIT_SHA: ${{ steps.push.outputs.sha }}
+        run: node scripts/reply-review.mjs
+
       # One comment per PR, updated on every run.
       - name: Comment on the pull request
         if: always() && steps.report.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          id=$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
-            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | startswith("<!-- test-agent-report -->"))) | .id' | tail -n 1)
-          if [ -n "$id" ]; then
-            gh api -X PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -F body=@.test-agent/comment.md > /dev/null
-          else
-            gh pr comment "$PR_NUMBER" --body-file .test-agent/comment.md
-          fi
+        run: node scripts/pr-comment.mjs .test-agent/comment.md
 
       - name: Upload agent logs and results
         if: always()
