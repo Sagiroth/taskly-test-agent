@@ -34,6 +34,7 @@ export function selectTodos(
     .filter((todo) => {
       const statusMatches =
         filter === 'all' ||
+        filter === 'archived' ||
         (filter === 'completed' ? todo.completed : !todo.completed)
       return (
         statusMatches &&

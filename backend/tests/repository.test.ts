@@ -11,11 +11,51 @@ function setup() {
   return { database, repository: new TodoRepository(database) };
 }
 
-it('lists tasks in newest-first order and maps database rows', async () => {
+it('lists non-archived tasks in newest-first order and maps database rows', async () => {
   const { database, repository } = setup();
   const findMany = vi.spyOn(database.todo, 'findMany').mockResolvedValue([record]);
   expect(await repository.list()).toEqual([todo]);
-  expect(findMany).toHaveBeenCalledWith({ orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+  expect(findMany).toHaveBeenCalledWith({ where: { archived: false }, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+});
+it('lists only non-archived tasks when archived is false', async () => {
+  const { database, repository } = setup();
+  const findMany = vi.spyOn(database.todo, 'findMany').mockResolvedValue([record]);
+  expect(await repository.list({ archived: false })).toEqual([todo]);
+  expect(findMany).toHaveBeenCalledWith({ where: { archived: false }, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+});
+it('lists only archived tasks in newest-first order when archived is true', async () => {
+  const { database, repository } = setup();
+  const archivedRecord = { ...record, completed: true, archived: true };
+  const findMany = vi.spyOn(database.todo, 'findMany').mockResolvedValue([archivedRecord]);
+  expect(await repository.list({ archived: true })).toEqual([{ ...todo, completed: true, archived: true }]);
+  expect(findMany).toHaveBeenCalledWith({ where: { archived: true }, orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+});
+it('archives completed, non-archived tasks in a single update and returns the count', async () => {
+  const { database, repository } = setup();
+  const updateMany = vi.spyOn(database.todo, 'updateMany').mockResolvedValue({ count: 2 });
+  expect(await repository.archiveCompleted()).toBe(2);
+  expect(updateMany).toHaveBeenCalledOnce();
+  expect(updateMany).toHaveBeenCalledWith({
+    where: { completed: true, archived: false }, data: { archived: true, updated_at: expect.any(Date) },
+  });
+});
+it('returns 0 when there are no completed tasks to archive', async () => {
+  const { database, repository } = setup();
+  vi.spyOn(database.todo, 'updateMany').mockResolvedValue({ count: 0 });
+  expect(await repository.archiveCompleted()).toBe(0);
+});
+it('propagates database errors when archiving', async () => {
+  const { database, repository } = setup();
+  vi.spyOn(database.todo, 'updateMany').mockRejectedValue(new Error('Database unavailable'));
+  await expect(repository.archiveCompleted()).rejects.toThrow('Database unavailable');
+});
+it('restores an archived task by updating archived to false', async () => {
+  const { database, repository } = setup();
+  const update = vi.spyOn(database.todo, 'updateManyAndReturn').mockResolvedValue([{ ...record, completed: true, archived: false }]);
+  expect(await repository.update(1, { archived: false })).toEqual({ ...todo, completed: true, archived: false });
+  expect(update).toHaveBeenCalledWith({
+    where: { id: 1 }, data: { archived: false, due_date: undefined, updated_at: expect.any(Date) },
+  });
 });
 it('gets a task by ID and handles missing tasks', async () => {
   const { database, repository } = setup();

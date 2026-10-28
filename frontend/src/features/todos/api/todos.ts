@@ -3,6 +3,8 @@ import type { Todo, TodoInput } from '../types'
 
 export const todosApi = {
   list: (signal?: AbortSignal) => request<Todo[]>('/todos', { signal }),
+  listArchived: (signal?: AbortSignal) =>
+    request<Todo[]>('/todos?archived=true', { signal }),
   create: (input: TodoInput) => {
     // A form initialized with a Todo must never send read-only fields.
     const { title, description, priority, due_date, completed } = input
@@ -31,4 +33,13 @@ export const todosApi = {
     })
   },
   remove: (id: number) => request<void>(`/todos/${id}`, { method: 'DELETE' }),
+  archiveCompleted: () =>
+    request<{ archived: number }>('/todos/archive-completed', {
+      method: 'POST',
+    }),
+  restore: (id: number) =>
+    request<Todo>(`/todos/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ archived: false }),
+    }),
 }

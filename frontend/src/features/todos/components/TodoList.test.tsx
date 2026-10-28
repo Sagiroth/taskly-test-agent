@@ -17,12 +17,14 @@ vi.mock('./TodoItem', () => ({
     onToggle,
     onEdit,
     onDelete,
+    onRestore,
   }: {
     todo: Todo
     busy: boolean
     onToggle: () => void
     onEdit: () => void
     onDelete: () => void
+    onRestore?: () => void
   }) => (
     <li>
       {todo.title}
@@ -31,6 +33,7 @@ vi.mock('./TodoItem', () => ({
       </button>
       <button onClick={onEdit}>Edit {todo.title}</button>
       <button onClick={onDelete}>Delete {todo.title}</button>
+      {onRestore && <button onClick={onRestore}>Restore {todo.title}</button>}
     </li>
   ),
 }))
@@ -150,6 +153,48 @@ it('forwards item actions with the task they belong to', async () => {
   expect(onToggle).toHaveBeenCalledExactlyOnceWith(second)
   expect(onEdit).toHaveBeenCalledExactlyOnceWith(todoFixture)
   expect(onDelete).toHaveBeenCalledExactlyOnceWith(second)
+})
+
+it('forwards restore requests with the task they belong to', async () => {
+  const user = userEvent.setup()
+  const archived = { ...todoFixture, completed: true, archived: true }
+  const second = { ...archived, id: 8, title: 'Review notes' }
+  const onRestore = vi.fn()
+  render(
+    <TodoList
+      todos={[archived, second]}
+      hasTodos
+      loading={false}
+      failed={false}
+      busy={false}
+      onCreate={vi.fn()}
+      onToggle={vi.fn()}
+      onEdit={vi.fn()}
+      onDelete={vi.fn()}
+      onRestore={onRestore}
+    />,
+  )
+  await user.click(screen.getByRole('button', { name: 'Restore Review notes' }))
+  expect(onRestore).toHaveBeenCalledExactlyOnceWith(second)
+})
+
+it('does not offer restoring when no restore callback is given', () => {
+  render(
+    <TodoList
+      todos={[todoFixture]}
+      hasTodos
+      loading={false}
+      failed={false}
+      busy={false}
+      onCreate={vi.fn()}
+      onToggle={vi.fn()}
+      onEdit={vi.fn()}
+      onDelete={vi.fn()}
+    />,
+  )
+  expect(
+    screen.queryByRole('button', { name: `Restore ${todoFixture.title}` }),
+  ).not.toBeInTheDocument()
 })
 
 it('passes the busy state to every item', () => {

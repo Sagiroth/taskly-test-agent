@@ -151,6 +151,96 @@ it('completes an active task and forwards delete requests', async () => {
   expect(onEdit).not.toHaveBeenCalled()
 })
 
+it('offers only restoring for an archived task', async () => {
+  const user = userEvent.setup()
+  const onRestore = vi.fn()
+  const onToggle = vi.fn()
+  const onEdit = vi.fn()
+  const onDelete = vi.fn()
+  render(
+    <TodoItem
+      todo={{ ...todoFixture, completed: true, archived: true }}
+      busy={false}
+      onEdit={onEdit}
+      onToggle={onToggle}
+      onDelete={onDelete}
+      onRestore={onRestore}
+    />,
+  )
+  expect(screen.getByRole('heading', { name: todoFixture.title })).toBeVisible()
+  expect(screen.queryByRole('checkbox')).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: `Edit: ${todoFixture.title}` }),
+  ).not.toBeInTheDocument()
+  expect(
+    screen.queryByRole('button', { name: `Delete: ${todoFixture.title}` }),
+  ).not.toBeInTheDocument()
+  await user.click(
+    screen.getByRole('button', { name: `Restore: ${todoFixture.title}` }),
+  )
+  expect(onRestore).toHaveBeenCalledTimes(1)
+  expect(onToggle).not.toHaveBeenCalled()
+  expect(onEdit).not.toHaveBeenCalled()
+  expect(onDelete).not.toHaveBeenCalled()
+})
+
+it('restores an archived task with the keyboard', async () => {
+  const user = userEvent.setup()
+  const onRestore = vi.fn()
+  render(
+    <TodoItem
+      todo={{ ...todoFixture, completed: true, archived: true }}
+      busy={false}
+      onEdit={vi.fn()}
+      onToggle={vi.fn()}
+      onDelete={vi.fn()}
+      onRestore={onRestore}
+    />,
+  )
+  await user.tab()
+  expect(
+    screen.getByRole('button', { name: `Restore: ${todoFixture.title}` }),
+  ).toHaveFocus()
+  await user.keyboard('{Enter}')
+  expect(onRestore).toHaveBeenCalledTimes(1)
+})
+
+it('disables restoring while busy', async () => {
+  const user = userEvent.setup()
+  const onRestore = vi.fn()
+  render(
+    <TodoItem
+      todo={{ ...todoFixture, completed: true, archived: true }}
+      busy
+      onEdit={vi.fn()}
+      onToggle={vi.fn()}
+      onDelete={vi.fn()}
+      onRestore={onRestore}
+    />,
+  )
+  const button = screen.getByRole('button', {
+    name: `Restore: ${todoFixture.title}`,
+  })
+  expect(button).toBeDisabled()
+  await user.click(button)
+  expect(onRestore).not.toHaveBeenCalled()
+})
+
+it('does not offer restoring without a restore callback', () => {
+  render(
+    <TodoItem
+      todo={todoFixture}
+      busy={false}
+      onEdit={vi.fn()}
+      onToggle={vi.fn()}
+      onDelete={vi.fn()}
+    />,
+  )
+  expect(
+    screen.queryByRole('button', { name: `Restore: ${todoFixture.title}` }),
+  ).not.toBeInTheDocument()
+})
+
 it('disables every action while busy', () => {
   render(
     <TodoItem

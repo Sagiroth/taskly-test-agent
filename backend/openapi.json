@@ -47,8 +47,25 @@
                 }
               }
             }
+          },
+          "422": {
+            "description": "Invalid query"
           }
-        }
+        },
+        "parameters": [
+          {
+            "name": "archived",
+            "in": "query",
+            "required": false,
+            "description": "Use \"true\" to list archived tasks only. Without it, archived tasks are excluded.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "true"
+              ]
+            }
+          }
+        ]
       },
       "post": {
         "requestBody": {
@@ -74,6 +91,33 @@
           },
           "422": {
             "description": "Invalid input"
+          }
+        }
+      }
+    },
+    "/api/todos/archive-completed": {
+      "post": {
+        "summary": "Archive all completed tasks",
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "archived"
+                  ],
+                  "properties": {
+                    "archived": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "description": "Number of tasks archived"
+                    }
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -224,6 +268,10 @@
           },
           "completed": {
             "type": "boolean"
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "Set to false to restore an archived task."
           }
         }
       },
@@ -235,6 +283,7 @@
           "priority",
           "due_date",
           "completed",
+          "archived",
           "id",
           "created_at",
           "updated_at"
@@ -266,6 +315,10 @@
             "default": null
           },
           "completed": {
+            "type": "boolean",
+            "default": false
+          },
+          "archived": {
             "type": "boolean",
             "default": false
           },

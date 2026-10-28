@@ -8,6 +8,7 @@ const base: Todo = {
   description: '',
   priority: 'medium',
   completed: false,
+  archived: false,
   due_date: null,
   created_at: '2026-10-01T12:00:00Z',
   updated_at: '2026-10-01T12:00:00Z',
@@ -47,6 +48,43 @@ describe('selectTodos', () => {
   it('keeps every task with the all filter and an empty search', () => {
     const done: Todo = { ...base, id: 2, completed: true }
     expect(selectTodos([base, done], 'all', '', 'newest')).toEqual([done, base])
+  })
+
+  it('keeps every task regardless of completion with the archived filter', () => {
+    const archivedOpen: Todo = { ...base, archived: true }
+    const archivedDone: Todo = { ...base, id: 2, completed: true, archived: true }
+    expect(
+      selectTodos([archivedOpen, archivedDone], 'archived', '', 'newest'),
+    ).toEqual([archivedDone, archivedOpen])
+  })
+
+  it('combines the archived filter with the search', () => {
+    const matching: Todo = { ...base, completed: true, archived: true }
+    const other: Todo = { ...matching, id: 2, title: 'Buy milk' }
+    expect(selectTodos([matching, other], 'archived', 'milk', 'newest')).toEqual(
+      [other],
+    )
+  })
+
+  it('sorts archived tasks by priority with the archived filter', () => {
+    const low: Todo = { ...base, id: 2, priority: 'low', archived: true }
+    const high: Todo = { ...base, id: 3, priority: 'high', archived: true }
+    const medium: Todo = {
+      ...base,
+      id: 4,
+      completed: true,
+      archived: true,
+    }
+    const otherHigh: Todo = {
+      ...base,
+      id: 5,
+      priority: 'high',
+      completed: true,
+      archived: true,
+    }
+    expect(
+      selectTodos([low, high, medium, otherHigh], 'archived', '', 'priority'),
+    ).toEqual([otherHigh, high, medium, low])
   })
 
   it('searches case-insensitively in the title', () => {

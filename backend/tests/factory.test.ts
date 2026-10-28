@@ -15,6 +15,7 @@ function setup() {
       create: vi.fn(),
       updateManyAndReturn: vi.fn(),
       deleteMany: vi.fn(),
+      updateMany: vi.fn(),
     },
   };
   return { app: createApp(database as unknown as Database), database };
@@ -45,6 +46,43 @@ it('serves the todos API backed by the database', async () => {
   expect(response.status).toBe(200);
   expect(response.body).toEqual([todo]);
   expect(database.todo.findMany).toHaveBeenCalledOnce();
+});
+
+it('archives completed tasks through the database', async () => {
+  const { app, database } = setup();
+  database.todo.updateMany.mockResolvedValue({ count: 3 });
+  const response = await request(app).post('/api/todos/archive-completed');
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({ archived: 3 });
+  expect(database.todo.updateMany).toHaveBeenCalledOnce();
+});
+
+it('lists only archived tasks from the database with archived=true', async () => {
+  const { app, database } = setup();
+  database.todo.findMany.mockResolvedValue([{ ...record, completed: true, archived: true }]);
+  const response = await request(app).get('/api/todos?archived=true');
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual([{ ...todo, completed: true, archived: true }]);
+  expect(database.todo.findMany).toHaveBeenCalledWith({
+    where: { archived: true }, orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+  });
+});
+
+it('returns 500 and logs the error when archiving fails in the database', async () => {
+  const { app, database } = setup();
+  const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {});
+  const failure = new Error('Database unavailable');
+  database.todo.updateMany.mockRejectedValue(failure);
+  const response = await request(app).post('/api/todos/archive-completed');
+  expect(response.status).toBe(500);
+  expect(response.body).toEqual({ detail: 'Internal Server Error' });
+  expect(consoleError).toHaveBeenCalledWith(failure);
+});
+
+it('describes the archive endpoint in the OpenAPI specification', async () => {
+  const { app } = setup();
+  const response = await request(app).get('/openapi.json');
+  expect(response.body.paths).toHaveProperty(['/api/todos/archive-completed', 'post']);
 });
 
 it('does not expose the x-powered-by header', async () => {

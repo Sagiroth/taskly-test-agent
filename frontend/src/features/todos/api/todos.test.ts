@@ -13,6 +13,53 @@ it('passes the abort signal when fetching tasks', async () => {
   expect(request).toHaveBeenCalledWith('/todos', { signal })
 })
 
+it('fetches only archived tasks with the abort signal', async () => {
+  const signal = new AbortController().signal
+  const archived = { ...todoFixture, completed: true, archived: true }
+  vi.mocked(request).mockResolvedValue([archived])
+  await expect(todosApi.listArchived(signal)).resolves.toEqual([archived])
+  expect(request).toHaveBeenCalledWith('/todos?archived=true', { signal })
+})
+
+it('archives completed tasks with a POST and returns the count', async () => {
+  vi.mocked(request).mockResolvedValue({ archived: 2 })
+  await expect(todosApi.archiveCompleted()).resolves.toEqual({ archived: 2 })
+  expect(request).toHaveBeenCalledWith('/todos/archive-completed', {
+    method: 'POST',
+  })
+})
+
+it('restores a task by id by patching archived to false only', async () => {
+  const restored = { ...todoFixture, completed: true, archived: false }
+  vi.mocked(request).mockResolvedValue(restored)
+  await expect(todosApi.restore(7)).resolves.toEqual(restored)
+  expect(request).toHaveBeenCalledWith('/todos/7', {
+    method: 'PATCH',
+    body: '{"archived":false}',
+  })
+})
+
+it('propagates an archive failure', async () => {
+  vi.mocked(request).mockRejectedValue(new Error('Server error'))
+  await expect(todosApi.archiveCompleted()).rejects.toThrow('Server error')
+})
+
+it('does not send the read-only archived field on creation', async () => {
+  vi.mocked(request).mockResolvedValue(todoFixture)
+  const archived = { ...todoFixture, archived: true }
+  await todosApi.create(archived)
+  expect(request).toHaveBeenCalledWith('/todos', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: todoFixture.title,
+      description: '',
+      priority: 'medium',
+      due_date: null,
+      completed: false,
+    }),
+  })
+})
+
 it('sends only writable task fields on creation', async () => {
   vi.mocked(request).mockResolvedValue(todoFixture)
   await expect(todosApi.create(todoFixture)).resolves.toEqual(todoFixture)

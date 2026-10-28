@@ -8,6 +8,9 @@ it.each([false, true])('maps records to JSON without mutation (completed: %s)', 
   expect(fromModel(input)).toEqual({ ...todo, completed });
   expect(input).toEqual(before);
 });
+it.each([false, true])('maps the archived flag (archived: %s)', (archived) => {
+  expect(fromModel({ ...record, completed: true, archived })).toEqual({ ...todo, completed: true, archived });
+});
 it('preserves an absent due date', () => {
   expect(fromModel({ ...record, due_date: null }).due_date).toBeNull();
 });

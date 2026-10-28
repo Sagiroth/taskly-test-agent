@@ -3,12 +3,15 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { useNotice } from '../../hooks/useNotice'
 import { todoFixture } from '../../test/todoFixture'
+import { useArchiveCompletedMutation } from './hooks/useArchiveCompletedMutation'
+import { useArchivedTodosQuery } from './hooks/useArchivedTodosQuery'
+import { useRestoreTodoMutation } from './hooks/useRestoreTodoMutation'
 import { useTodoFilters } from './hooks/useTodoFilters'
 import { useTodosBusy } from './hooks/useTodosBusy'
 import { useTodosQuery } from './hooks/useTodosQuery'
 import { useUpdateTodoMutation } from './hooks/useUpdateTodoMutation'
 import { TodosPage } from './TodosPage'
-import type { Todo } from './types'
+import type { Filter, Todo } from './types'
 
 vi.mock('../../design-system', () => import('../../design-system/mocks'))
 vi.mock('../../hooks/useNotice', () => ({ useNotice: vi.fn() }))
@@ -18,23 +21,52 @@ vi.mock('./hooks/useTodosQuery', () => ({ useTodosQuery: vi.fn() }))
 vi.mock('./hooks/useUpdateTodoMutation', () => ({
   useUpdateTodoMutation: vi.fn(),
 }))
+vi.mock('./hooks/useArchivedTodosQuery', () => ({
+  useArchivedTodosQuery: vi.fn(),
+}))
+vi.mock('./hooks/useArchiveCompletedMutation', () => ({
+  useArchiveCompletedMutation: vi.fn(),
+}))
+vi.mock('./hooks/useRestoreTodoMutation', () => ({
+  useRestoreTodoMutation: vi.fn(),
+}))
 vi.mock('./components/TodosHeader', () => ({
   TodosHeader: ({
     disabled,
+    archivableCount,
     onCreate,
+    onArchiveCompleted,
   }: {
     disabled: boolean
+    archivableCount: number
     onCreate: () => void
+    onArchiveCompleted: () => void
   }) => (
     <header>
       <h1>Tasks</h1>
+      {archivableCount > 0 && (
+        <button disabled={disabled} onClick={onArchiveCompleted}>
+          Archive completed ({archivableCount})
+        </button>
+      )}
       <button disabled={disabled} onClick={onCreate}>
         New task
       </button>
     </header>
   ),
 }))
-vi.mock('./components/TodoFilters', () => ({ TodoFilters: () => null }))
+vi.mock('./components/TodoFilters', () => ({
+  TodoFilters: ({
+    onFilterChange,
+  }: {
+    onFilterChange: (filter: Filter) => void
+  }) => (
+    <div>
+      <button onClick={() => onFilterChange('archived')}>Show archived</button>
+      <button onClick={() => onFilterChange('completed')}>Show completed</button>
+    </div>
+  ),
+}))
 vi.mock('./components/TodoList', () => ({
   TodoList: ({
     todos,
@@ -44,6 +76,7 @@ vi.mock('./components/TodoList', () => ({
     onToggle,
     onEdit,
     onDelete,
+    onRestore,
   }: {
     todos: Todo[]
     hasTodos: boolean
@@ -52,6 +85,7 @@ vi.mock('./components/TodoList', () => ({
     onToggle: (todo: Todo) => void
     onEdit: (todo: Todo) => void
     onDelete: (todo: Todo) => void
+    onRestore?: (todo: Todo) => void
   }) => (
     <section aria-label="Task list">
       <p>
@@ -63,6 +97,11 @@ vi.mock('./components/TodoList', () => ({
           <button onClick={() => onToggle(todo)}>Toggle {todo.title}</button>
           <button onClick={() => onEdit(todo)}>Edit {todo.title}</button>
           <button onClick={() => onDelete(todo)}>Delete {todo.title}</button>
+          {onRestore && (
+            <button onClick={() => onRestore(todo)}>
+              Restore {todo.title}
+            </button>
+          )}
         </div>
       ))}
     </section>
@@ -103,7 +142,27 @@ vi.mock('./components/DeleteTodoDialog', () => ({
   ),
 }))
 vi.mock('../../components/SuccessNotice', () => ({ SuccessNotice: () => null }))
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  vi.mocked(useArchivedTodosQuery).mockReturnValue({
+    data: undefined,
+    isPending: true,
+    isFetching: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn().mockResolvedValue(undefined),
+  } as unknown as ReturnType<typeof useArchivedTodosQuery>)
+  vi.mocked(useArchiveCompletedMutation).mockReturnValue({
+    error: null,
+    reset: vi.fn(),
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof useArchiveCompletedMutation>)
+  vi.mocked(useRestoreTodoMutation).mockReturnValue({
+    error: null,
+    reset: vi.fn(),
+    mutateAsync: vi.fn(),
+  } as unknown as ReturnType<typeof useRestoreTodoMutation>)
+})
 
 it('displays a query failure and resets mutation errors before retrying', async () => {
   const user = userEvent.setup()
@@ -176,17 +235,329 @@ function mockLoadedPage({
   } as unknown as ReturnType<typeof useUpdateTodoMutation>)
   vi.mocked(useTodosBusy).mockReturnValue(busy)
   vi.mocked(useNotice).mockReturnValue({ message: '', notify })
-  vi.mocked(useTodoFilters).mockReturnValue({
+  const setFilter = vi.fn()
+  vi.mocked(useTodoFilters).mockImplementation((source) => ({
     filter: 'all',
     search: '',
     sort: 'newest',
-    visible: todos,
-    setFilter: vi.fn(),
+    visible: source,
+    setFilter,
     setSearch: vi.fn(),
     setSort: vi.fn(),
-  })
-  return { notify }
+  }))
+  return { notify, setFilter }
 }
+
+function mockArchivedQuery({
+  todos = [],
+  isPending = false,
+  isFetching = false,
+  error = null,
+  refetch = vi.fn().mockResolvedValue(undefined),
+}: {
+  todos?: Todo[]
+  isPending?: boolean
+  isFetching?: boolean
+  error?: Error | null
+  refetch?: ReturnType<typeof vi.fn>
+} = {}) {
+  vi.mocked(useArchivedTodosQuery).mockReturnValue({
+    data: isPending ? undefined : todos,
+    isPending,
+    isFetching,
+    isError: error !== null,
+    error,
+    refetch,
+  } as unknown as ReturnType<typeof useArchivedTodosQuery>)
+  return { refetch }
+}
+
+function mockArchiveMutation(mutateAsync = vi.fn(), error: Error | null = null) {
+  const reset = vi.fn()
+  vi.mocked(useArchiveCompletedMutation).mockReturnValue({
+    error,
+    reset,
+    mutateAsync,
+  } as unknown as ReturnType<typeof useArchiveCompletedMutation>)
+  return { mutateAsync, reset }
+}
+
+function mockRestoreMutation(mutateAsync = vi.fn(), error: Error | null = null) {
+  const reset = vi.fn()
+  vi.mocked(useRestoreTodoMutation).mockReturnValue({
+    error,
+    reset,
+    mutateAsync,
+  } as unknown as ReturnType<typeof useRestoreTodoMutation>)
+  return { mutateAsync, reset }
+}
+
+const openTask: Todo = { ...todoFixture, id: 1, title: 'Open task' }
+const doneTask: Todo = {
+  ...todoFixture,
+  id: 2,
+  title: 'Done task',
+  completed: true,
+}
+const otherDoneTask: Todo = {
+  ...todoFixture,
+  id: 3,
+  title: 'Other done task',
+  completed: true,
+}
+const archivedTask: Todo = {
+  ...todoFixture,
+  id: 4,
+  title: 'Archived task',
+  completed: true,
+  archived: true,
+}
+const otherArchivedTask: Todo = {
+  ...archivedTask,
+  id: 5,
+  title: 'Other archived task',
+}
+
+it('offers archiving with the number of completed tasks', () => {
+  mockLoadedPage({ todos: [doneTask, openTask, otherDoneTask] })
+  render(<TodosPage />)
+  expect(
+    screen.getByRole('button', { name: 'Archive completed (2)' }),
+  ).toBeEnabled()
+})
+
+it('does not offer archiving when no task is completed', () => {
+  mockLoadedPage({ todos: [openTask] })
+  render(<TodosPage />)
+  expect(
+    screen.queryByRole('button', { name: /Archive completed/ }),
+  ).not.toBeInTheDocument()
+})
+
+it('disables archiving while another task operation is busy', () => {
+  mockLoadedPage({ todos: [doneTask], busy: true })
+  render(<TodosPage />)
+  expect(
+    screen.getByRole('button', { name: 'Archive completed (1)' }),
+  ).toBeDisabled()
+})
+
+it.each([
+  [2, '2 tasks archived'],
+  [1, '1 task archived'],
+])(
+  'archives completed tasks and confirms %i archived',
+  async (archived, notice) => {
+    const user = userEvent.setup()
+    const { notify } = mockLoadedPage({
+      todos: [doneTask, openTask, otherDoneTask],
+    })
+    const { mutateAsync } = mockArchiveMutation(
+      vi.fn().mockResolvedValue({ archived }),
+    )
+    render(<TodosPage />)
+    await user.click(
+      screen.getByRole('button', { name: 'Archive completed (2)' }),
+    )
+    await waitFor(() => expect(notify).toHaveBeenCalledWith(notice))
+    expect(mutateAsync).toHaveBeenCalledTimes(1)
+  },
+)
+
+it('does not confirm archiving when it fails', async () => {
+  const user = userEvent.setup()
+  const { notify } = mockLoadedPage({ todos: [doneTask, openTask] })
+  const { mutateAsync } = mockArchiveMutation(
+    vi.fn().mockRejectedValue(new Error('Could not archive.')),
+  )
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Archive completed (1)' }))
+  await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+  expect(notify).not.toHaveBeenCalled()
+})
+
+it('shows the archive error and keeps the task list', () => {
+  mockLoadedPage({ todos: [doneTask, openTask] })
+  mockArchiveMutation(vi.fn(), new Error('Could not archive the tasks.'))
+  render(<TodosPage />)
+  expect(screen.getByTestId('alert')).toHaveTextContent(
+    'Could not archive the tasks.',
+  )
+  expect(
+    screen.getByText(/2 visible, has tasks true,\s+loading false, failed false/),
+  ).toBeVisible()
+})
+
+it('loads only the active task list by default without restore actions', () => {
+  mockLoadedPage({ todos: [openTask] })
+  render(<TodosPage />)
+  expect(useArchivedTodosQuery).toHaveBeenLastCalledWith(false)
+  expect(
+    screen.getByRole('button', { name: 'Toggle Open task' }),
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Restore Open task' }),
+  ).not.toBeInTheDocument()
+})
+
+it('shows only the archived tasks with restore actions when selecting Archived', async () => {
+  const user = userEvent.setup()
+  const { setFilter } = mockLoadedPage({ todos: [openTask, doneTask] })
+  mockArchivedQuery({ todos: [archivedTask, otherArchivedTask] })
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  expect(setFilter).toHaveBeenCalledWith('archived')
+  expect(useArchivedTodosQuery).toHaveBeenLastCalledWith(true)
+  expect(useTodoFilters).toHaveBeenLastCalledWith([
+    archivedTask,
+    otherArchivedTask,
+  ])
+  expect(
+    screen.getByText(/2 visible, has tasks true,\s+loading false, failed false/),
+  ).toBeVisible()
+  expect(
+    screen.getByRole('button', { name: 'Restore Archived task' }),
+  ).toBeVisible()
+  expect(
+    screen.getByRole('button', { name: 'Restore Other archived task' }),
+  ).toBeVisible()
+  expect(
+    screen.queryByRole('button', { name: 'Toggle Open task' }),
+  ).not.toBeInTheDocument()
+})
+
+it('keeps counting archivable tasks from the active list in the archived view', async () => {
+  const user = userEvent.setup()
+  mockLoadedPage({ todos: [openTask, doneTask] })
+  mockArchivedQuery({ todos: [archivedTask] })
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  expect(
+    screen.getByRole('button', { name: 'Archive completed (1)' }),
+  ).toBeVisible()
+})
+
+it('returns to the active task list when leaving the archived view', async () => {
+  const user = userEvent.setup()
+  mockLoadedPage({ todos: [openTask] })
+  mockArchivedQuery({ todos: [archivedTask] })
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  await user.click(screen.getByRole('button', { name: 'Show completed' }))
+  expect(useArchivedTodosQuery).toHaveBeenLastCalledWith(false)
+  expect(useTodoFilters).toHaveBeenLastCalledWith([openTask])
+  expect(
+    screen.queryByRole('button', { name: 'Restore Archived task' }),
+  ).not.toBeInTheDocument()
+})
+
+it('shows the archived list as loading while archived tasks are fetched', async () => {
+  const user = userEvent.setup()
+  mockLoadedPage({ todos: [openTask] })
+  mockArchivedQuery({ isPending: true, isFetching: true })
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  expect(
+    screen.getByText(/0 visible, has tasks false,\s+loading true, failed false/),
+  ).toBeVisible()
+})
+
+it('restores an archived task and tells the user', async () => {
+  const user = userEvent.setup()
+  const { notify } = mockLoadedPage({ todos: [openTask] })
+  mockArchivedQuery({ todos: [archivedTask] })
+  const { mutateAsync } = mockRestoreMutation(
+    vi.fn().mockResolvedValue({ ...archivedTask, archived: false }),
+  )
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Restore Archived task' }),
+  )
+  await waitFor(() => expect(notify).toHaveBeenCalledWith('Task restored.'))
+  expect(mutateAsync).toHaveBeenCalledExactlyOnceWith(archivedTask.id)
+})
+
+it('does not notify when restoring fails', async () => {
+  const user = userEvent.setup()
+  const { notify } = mockLoadedPage({ todos: [openTask] })
+  mockArchivedQuery({ todos: [archivedTask] })
+  const { mutateAsync } = mockRestoreMutation(
+    vi.fn().mockRejectedValue(new Error('Task not found.')),
+  )
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Restore Archived task' }),
+  )
+  await waitFor(() => expect(mutateAsync).toHaveBeenCalledTimes(1))
+  expect(notify).not.toHaveBeenCalled()
+})
+
+it('shows the restore error in the alert', () => {
+  mockLoadedPage({ todos: [openTask] })
+  mockRestoreMutation(vi.fn(), new Error('Could not restore the task.'))
+  render(<TodosPage />)
+  expect(screen.getByTestId('alert')).toHaveTextContent(
+    'Could not restore the task.',
+  )
+})
+
+it('ignores restoring while another task operation is busy', async () => {
+  const user = userEvent.setup()
+  const { notify } = mockLoadedPage({ todos: [openTask], busy: true })
+  mockArchivedQuery({ todos: [archivedTask] })
+  const { mutateAsync } = mockRestoreMutation()
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  await user.click(
+    screen.getByRole('button', { name: 'Restore Archived task' }),
+  )
+  expect(mutateAsync).not.toHaveBeenCalled()
+  expect(notify).not.toHaveBeenCalled()
+})
+
+it('shows an archived list failure and retries the archived query after resetting mutation errors', async () => {
+  const user = userEvent.setup()
+  mockLoadedPage({ todos: [openTask] })
+  const { refetch } = mockArchivedQuery({
+    error: new Error('Archived tasks are unavailable.'),
+  })
+  const archive = mockArchiveMutation()
+  const restore = mockRestoreMutation()
+  render(<TodosPage />)
+  expect(screen.queryByTestId('alert')).not.toBeInTheDocument()
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  expect(screen.getByTestId('alert')).toHaveTextContent(
+    'Archived tasks are unavailable.',
+  )
+  expect(
+    screen.getByText(/failed true/),
+  ).toBeVisible()
+  await user.click(screen.getByRole('button', { name: 'Try again' }))
+  await waitFor(() => expect(refetch).toHaveBeenCalledTimes(1))
+  expect(vi.mocked(useTodosQuery).mock.results[0].value.refetch).not.toHaveBeenCalled()
+  expect(archive.reset).toHaveBeenCalledTimes(1)
+  expect(restore.reset).toHaveBeenCalledTimes(1)
+  expect(archive.reset.mock.invocationCallOrder[0]).toBeLessThan(
+    refetch.mock.invocationCallOrder[0],
+  )
+  expect(restore.reset.mock.invocationCallOrder[0]).toBeLessThan(
+    refetch.mock.invocationCallOrder[0],
+  )
+})
+
+it('disables retrying while the archived list is being refetched', async () => {
+  const user = userEvent.setup()
+  mockLoadedPage({ todos: [openTask] })
+  mockArchivedQuery({
+    error: new Error('Archived tasks are unavailable.'),
+    isFetching: true,
+  })
+  render(<TodosPage />)
+  await user.click(screen.getByRole('button', { name: 'Show archived' }))
+  expect(screen.getByRole('button', { name: 'Try again' })).toBeDisabled()
+})
 
 it('completes an active task and congratulates the user', async () => {
   const user = userEvent.setup()

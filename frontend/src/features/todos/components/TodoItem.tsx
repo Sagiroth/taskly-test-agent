@@ -1,4 +1,4 @@
-import { CalendarDays, Pencil, Trash2 } from 'lucide-react'
+import { ArchiveRestore, CalendarDays, Pencil, Trash2 } from 'lucide-react'
 import type { Todo } from '../types'
 import { formatDate, isOverdue, priorityLabels } from '../utils/todos'
 import {
@@ -16,12 +16,15 @@ export function TodoItem({
   onToggle,
   onEdit,
   onDelete,
+  onRestore,
 }: {
   todo: Todo
   busy: boolean
   onToggle: () => void
   onEdit: () => void
   onDelete: () => void
+  /** Set for archived tasks: the only action is restoring them. */
+  onRestore?: () => void
 }) {
   return (
     <li>
@@ -55,31 +58,44 @@ export function TodoItem({
               )}
             </div>
           </div>
-          <div className="row compact todo-actions">
-            <Checkbox
-              label=""
-              checked={todo.completed}
-              disabled={busy}
-              onChange={onToggle}
-              aria-label={`${todo.completed ? 'Mark as active' : 'Complete'}: ${todo.title}`}
-            />
-            <IconButton
-              variant="ghost"
-              disabled={busy}
-              onClick={onEdit}
-              aria-label={`Edit: ${todo.title}`}
-            >
-              <Pencil size={16} aria-hidden="true" />
-            </IconButton>
-            <IconButton
-              variant="ghost"
-              disabled={busy}
-              onClick={onDelete}
-              aria-label={`Delete: ${todo.title}`}
-            >
-              <Trash2 size={16} aria-hidden="true" />
-            </IconButton>
-          </div>
+          {onRestore ? (
+            <div className="row compact todo-actions">
+              <IconButton
+                variant="ghost"
+                disabled={busy}
+                onClick={onRestore}
+                aria-label={`Restore: ${todo.title}`}
+              >
+                <ArchiveRestore size={16} aria-hidden="true" />
+              </IconButton>
+            </div>
+          ) : (
+            <div className="row compact todo-actions">
+              <Checkbox
+                label=""
+                checked={todo.completed}
+                disabled={busy}
+                onChange={onToggle}
+                aria-label={`${todo.completed ? 'Mark as active' : 'Complete'}: ${todo.title}`}
+              />
+              <IconButton
+                variant="ghost"
+                disabled={busy}
+                onClick={onEdit}
+                aria-label={`Edit: ${todo.title}`}
+              >
+                <Pencil size={16} aria-hidden="true" />
+              </IconButton>
+              <IconButton
+                variant="ghost"
+                disabled={busy}
+                onClick={onDelete}
+                aria-label={`Delete: ${todo.title}`}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+              </IconButton>
+            </div>
+          )}
         </div>
       </Card>
     </li>

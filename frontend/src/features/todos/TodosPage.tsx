@@ -7,22 +7,41 @@ import { TodoEditor } from './components/TodoEditor'
 import { TodoFilters } from './components/TodoFilters'
 import { TodoList } from './components/TodoList'
 import { TodosHeader } from './components/TodosHeader'
+import { useArchiveCompletedMutation } from './hooks/useArchiveCompletedMutation'
+import { useArchivedTodosQuery } from './hooks/useArchivedTodosQuery'
+import { useRestoreTodoMutation } from './hooks/useRestoreTodoMutation'
 import { useTodoFilters } from './hooks/useTodoFilters'
 import { useTodosBusy } from './hooks/useTodosBusy'
 import { useTodosQuery } from './hooks/useTodosQuery'
 import { useUpdateTodoMutation } from './hooks/useUpdateTodoMutation'
-import type { Todo } from './types'
+import type { Filter, Todo } from './types'
 
 export function TodosPage() {
   const todosQuery = useTodosQuery()
-  const todos = todosQuery.data ?? []
+  const [showArchived, setShowArchived] = useState(false)
+  const archivedQuery = useArchivedTodosQuery(showArchived)
+  const activeTodos = todosQuery.data ?? []
+  const todos = showArchived ? (archivedQuery.data ?? []) : activeTodos
   const filters = useTodoFilters(todos)
   const toggleTodo = useUpdateTodoMutation()
+  const archiveCompleted = useArchiveCompletedMutation()
+  const restoreTodo = useRestoreTodoMutation()
   const busy = useTodosBusy()
   const { message, notify } = useNotice()
   const [editor, setEditor] = useState<Todo | 'new' | null>(null)
   const [deleting, setDeleting] = useState<Todo | null>(null)
-  const error = toggleTodo.error ?? todosQuery.error
+  const listQuery = showArchived ? archivedQuery : todosQuery
+  const error =
+    toggleTodo.error ??
+    archiveCompleted.error ??
+    restoreTodo.error ??
+    listQuery.error
+  const archivableCount = activeTodos.filter((todo) => todo.completed).length
+
+  function changeFilter(filter: Filter) {
+    filters.setFilter(filter)
+    setShowArchived(filter === 'archived')
+  }
 
   async function toggle(todo: Todo) {
     if (busy) return
@@ -40,9 +59,29 @@ export function TodosPage() {
       // Display the mutation error in the page alert.
     }
   }
+  async function archive() {
+    if (busy) return
+    try {
+      const { archived } = await archiveCompleted.mutateAsync()
+      notify(`${archived} ${archived === 1 ? 'task' : 'tasks'} archived`)
+    } catch {
+      // Display the mutation error in the page alert.
+    }
+  }
+  async function restore(todo: Todo) {
+    if (busy) return
+    try {
+      await restoreTodo.mutateAsync(todo.id)
+      notify('Task restored.')
+    } catch {
+      // Display the mutation error in the page alert.
+    }
+  }
   async function retry() {
     toggleTodo.reset()
-    await todosQuery.refetch()
+    archiveCompleted.reset()
+    restoreTodo.reset()
+    await listQuery.refetch()
   }
 
   return (
@@ -50,13 +89,15 @@ export function TodosPage() {
       <main id="main" className="page-layout">
         <TodosHeader
           disabled={todosQuery.isPending || busy}
+          archivableCount={archivableCount}
           onCreate={() => setEditor('new')}
+          onArchiveCompleted={() => void archive()}
         />
         <TodoFilters
           filter={filters.filter}
           search={filters.search}
           sort={filters.sort}
-          onFilterChange={filters.setFilter}
+          onFilterChange={changeFilter}
           onSearchChange={filters.setSearch}
           onSortChange={filters.setSort}
         />
@@ -65,7 +106,7 @@ export function TodosPage() {
             {error.message}
             <Button
               variant="secondary"
-              disabled={todosQuery.isFetching || busy}
+              disabled={listQuery.isFetching || busy}
               onClick={() => void retry()}
             >
               Try again
@@ -75,13 +116,14 @@ export function TodosPage() {
         <TodoList
           todos={filters.visible}
           hasTodos={todos.length > 0}
-          loading={todosQuery.isPending}
-          failed={todosQuery.isError}
+          loading={listQuery.isPending}
+          failed={listQuery.isError}
           busy={busy}
           onCreate={() => setEditor('new')}
           onToggle={(todo) => void toggle(todo)}
           onEdit={setEditor}
           onDelete={setDeleting}
+          onRestore={showArchived ? (todo) => void restore(todo) : undefined}
         />
       </main>
       <SuccessNotice message={message} />

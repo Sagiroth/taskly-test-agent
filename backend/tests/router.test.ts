@@ -5,7 +5,10 @@ import { createTodosRouter } from '../src/features/todos/router.ts';
 import { todo } from './fixture.ts';
 
 function setup() {
-  const repository = { list: vi.fn().mockResolvedValue([todo]), create: vi.fn().mockResolvedValue(todo), get: vi.fn(), update: vi.fn(), delete: vi.fn() };
+  const repository = {
+    list: vi.fn().mockResolvedValue([todo]), create: vi.fn().mockResolvedValue(todo), get: vi.fn(), update: vi.fn(), delete: vi.fn(),
+    archiveCompleted: vi.fn(),
+  };
   const app = express();
   app.use(express.json());
   app.use('/api/todos', createTodosRouter(repository));
@@ -18,6 +21,54 @@ it('lists tasks from the repository', async () => {
   expect(response.body).toEqual([todo]);
   expect(repository.list).toHaveBeenCalledOnce();
 });
+it('lists only non-archived tasks by default', async () => {
+  const { app, repository } = setup();
+  await request(app).get('/api/todos');
+  expect(repository.list).toHaveBeenCalledWith({ archived: false });
+});
+it('lists only archived tasks with archived=true', async () => {
+  const { app, repository } = setup();
+  const archivedTodo = { ...todo, completed: true, archived: true };
+  repository.list.mockResolvedValue([archivedTodo]);
+  const response = await request(app).get('/api/todos?archived=true');
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual([archivedTodo]);
+  expect(repository.list).toHaveBeenCalledWith({ archived: true });
+});
+it.each(['false', 'TRUE', '1', '', 'true&archived=true'])(
+  'rejects archived=%s with 422 without calling the repository', async (value) => {
+    const { app, repository } = setup();
+    const response = await request(app).get(`/api/todos?archived=${value}`);
+    expect(response.status).toBe(422);
+    expect(Array.isArray(response.body.detail)).toBe(true);
+    expect(repository.list).not.toHaveBeenCalled();
+  },
+);
+it('archives completed tasks and returns the number archived', async () => {
+  const { app, repository } = setup();
+  repository.archiveCompleted.mockResolvedValue(2);
+  const response = await request(app).post('/api/todos/archive-completed');
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({ archived: 2 });
+  expect(repository.archiveCompleted).toHaveBeenCalledOnce();
+  expect(repository.create).not.toHaveBeenCalled();
+});
+it('returns 200 with archived 0 when there is nothing to archive', async () => {
+  const { app, repository } = setup();
+  repository.archiveCompleted.mockResolvedValue(0);
+  const response = await request(app).post('/api/todos/archive-completed');
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual({ archived: 0 });
+});
+it('restores an archived task with archived false', async () => {
+  const { app, repository } = setup();
+  const restored = { ...todo, completed: true, archived: false };
+  repository.update.mockResolvedValue(restored);
+  const response = await request(app).patch('/api/todos/1').send({ archived: false });
+  expect(response.status).toBe(200);
+  expect(response.body).toEqual(restored);
+  expect(repository.update).toHaveBeenCalledWith(1, { archived: false });
+});
 it('creates tasks with trimmed input and defaults', async () => {
   const { app, repository } = setup();
   const response = await request(app).post('/api/todos').send({ title: '  Plan the sprint  ', priority: 'high' });
@@ -25,7 +76,7 @@ it('creates tasks with trimmed input and defaults', async () => {
   expect(response.body).toEqual(todo);
   expect(repository.create).toHaveBeenCalledWith({ title: 'Plan the sprint', description: '', priority: 'high', due_date: null, completed: false });
 });
-it.each([{ title: '  ' }, { title: 'x'.repeat(121) }, { title: 'Task', priority: 'urgent' }, { title: 'Task', due_date: '2026-02-30' }])(
+it.each([{ title: '  ' }, { title: 'x'.repeat(121) }, { title: 'Task', priority: 'urgent' }, { title: 'Task', due_date: '2026-02-30' }, { title: 'Task', archived: true }])(
   'rejects invalid create input without calling the repository: %j', async (payload) => {
     const { app, repository } = setup();
     expect((await request(app).post('/api/todos').send(payload)).status).toBe(422);
@@ -82,7 +133,7 @@ it('returns 404 when updating a missing task', async () => {
   expect(response.status).toBe(404);
   expect(response.body).toEqual({ detail: 'Task not found.' });
 });
-it.each([{}, { id: 2 }, { title: '  ' }, { priority: 'urgent' }, { due_date: '2026-02-30' }, { completed: 'yes' }, { title: null }])(
+it.each([{}, { id: 2 }, { title: '  ' }, { priority: 'urgent' }, { due_date: '2026-02-30' }, { completed: 'yes' }, { title: null }, { archived: 'false' }, { archived: null }])(
   'rejects invalid update input without calling the repository: %j', async (payload) => {
     const { app, repository } = setup();
     const response = await request(app).patch('/api/todos/1').send(payload);

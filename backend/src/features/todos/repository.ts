@@ -4,8 +4,11 @@ import type { Database, TodoStore, TodoCreate, TodoUpdate, Todo } from './types.
 export class TodoRepository implements TodoStore {
   constructor(private readonly database: Pick<Database, 'todo'>) {}
 
-  async list(): Promise<Todo[]> {
-    const rows = await this.database.todo.findMany({ orderBy: [{ created_at: 'desc' }, { id: 'desc' }] });
+  async list({ archived = false }: { archived?: boolean } = {}): Promise<Todo[]> {
+    const rows = await this.database.todo.findMany({
+      where: { archived },
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
+    });
     return rows.map(fromModel);
   }
 
@@ -28,7 +31,7 @@ export class TodoRepository implements TodoStore {
   }
 
   async update(id: number, payload: TodoUpdate): Promise<Todo | null> {
-    const allowed = ['title', 'description', 'priority', 'due_date', 'completed'];
+    const allowed = ['title', 'description', 'priority', 'due_date', 'completed', 'archived'];
     const entries = Object.entries(payload);
     if (!entries.length || entries.some(([key]) => !allowed.includes(key))) {
       throw new Error('Invalid update fields.');
@@ -47,5 +50,13 @@ export class TodoRepository implements TodoStore {
   async delete(id: number): Promise<boolean> {
     const { count } = await this.database.todo.deleteMany({ where: { id } });
     return count > 0;
+  }
+
+  async archiveCompleted(): Promise<number> {
+    const { count } = await this.database.todo.updateMany({
+      where: { completed: true, archived: false },
+      data: { archived: true, updated_at: new Date() },
+    });
+    return count;
   }
 }
