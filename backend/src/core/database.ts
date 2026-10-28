@@ -16,7 +16,10 @@ export async function initialize(database: Database): Promise<void> {
     priority VARCHAR(6) NOT NULL DEFAULT 'medium' CONSTRAINT todo_priority CHECK (priority IN ('low', 'medium', 'high')),
     due_date DATE,
     completed BOOLEAN NOT NULL DEFAULT FALSE,
+    archived BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL,
     updated_at TIMESTAMPTZ NOT NULL
   )`;
+  // Databases created before archiving existed get the column; existing tasks stay unarchived.
+  await database.$executeRaw`ALTER TABLE todos ADD COLUMN IF NOT EXISTS archived BOOLEAN NOT NULL DEFAULT FALSE`;
 }

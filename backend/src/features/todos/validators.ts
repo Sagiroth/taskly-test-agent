@@ -15,13 +15,16 @@ export const createSchema = z.strictObject({
   due_date: fields.due_date.default(null),
   completed: fields.completed.default(false),
 });
-export const updateSchema = z.strictObject(fields).partial().refine(
+// Tasks are created unarchived; only updates can archive or restore them.
+export const updateSchema = z.strictObject({ ...fields, archived: z.boolean() }).partial().refine(
   (value) => Object.keys(value).length > 0,
   'Provide at least one field to update.',
 );
+export const listQuerySchema = z.object({ archived: z.literal('true').optional() });
 export const idSchema = z.coerce.number().int().positive().max(Number.MAX_SAFE_INTEGER);
 export const todoSchema = createSchema.extend({
   id: z.number().int().positive(),
+  archived: z.boolean(),
   created_at: z.iso.datetime({ offset: true }),
   updated_at: z.iso.datetime({ offset: true }),
 });

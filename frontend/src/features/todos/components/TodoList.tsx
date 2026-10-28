@@ -13,6 +13,8 @@ interface TodoListProps {
   onToggle: (todo: Todo) => void
   onEdit: (todo: Todo) => void
   onDelete: (todo: Todo) => void
+  /** Set when the list shows archived tasks. */
+  onRestore?: (todo: Todo) => void
 }
 
 export function TodoList({
@@ -25,6 +27,7 @@ export function TodoList({
   onToggle,
   onEdit,
   onDelete,
+  onRestore,
 }: TodoListProps) {
   return (
     <section aria-label="Task list">
@@ -47,6 +50,7 @@ export function TodoList({
               onToggle={() => onToggle(todo)}
               onEdit={() => onEdit(todo)}
               onDelete={() => onDelete(todo)}
+              onRestore={onRestore && (() => onRestore(todo))}
             />
           ))}
         </ul>
