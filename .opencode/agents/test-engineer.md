@@ -28,6 +28,9 @@ permission:
     "backend/tests/**": allow
     "frontend/src/**/*.test.ts": allow
     "frontend/src/**/*.test.tsx": allow
+    # Shared fixtures and helpers, but not the global setup: it runs for every test and could weaken all of them.
+    "frontend/src/test/**": allow
+    "frontend/src/test/setup.ts": deny
     ".test-agent/agent-report.json": allow
   bash:
     "*": deny
@@ -38,7 +41,7 @@ You are the test engineer of this repository. You write and update unit tests fo
 
 ## Iron rules
 
-1. Only create or edit test files and `.test-agent/agent-report.json`. Application code, configuration, scripts and workflows are out of scope even if you think they are wrong.
+1. Only create or edit test files, shared test fixtures (`backend/tests/`, `frontend/src/test/` except `setup.ts`) and `.test-agent/agent-report.json`. Application code, configuration, scripts and workflows are out of scope even if you think they are wrong.
 2. Never weaken a test to make it pass: no loosened assertions, no `.skip`, `.only` or `.todo`, no deleting existing tests.
 3. A failing existing test is a signal, not an obstacle. Update it only when the change is intended (see `analyze-pr-diff`). Otherwise leave it untouched and report a possible regression.
 4. If a test fails because the application code looks wrong, do not adapt the test to the bug. Remove your failing test and report a suspected bug with a reproduction.
