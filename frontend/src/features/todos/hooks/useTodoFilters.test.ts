@@ -1,6 +1,7 @@
 import { act, renderHook } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { todoFixture } from '../../../test/todoFixture'
+import type { Todo } from '../types'
 import { useTodoFilters } from './useTodoFilters'
 
 const older = {
@@ -53,7 +54,7 @@ it('reorders tasks after changing the sort', () => {
 it('recomputes visible tasks when the task list changes', () => {
   const { result, rerender } = renderHook(
     ({ todos }) => useTodoFilters(todos),
-    { initialProps: { todos: [older] } },
+    { initialProps: { todos: [older] as Todo[] } },
   )
   rerender({ todos: [older, newer] })
   expect(result.current.visible).toEqual([newer, older])
