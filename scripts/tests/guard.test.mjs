@@ -4,16 +4,24 @@ import { checkChanges, parseStatus } from '../lib/guard.mjs';
 
 const status = (...fields) => `${fields.join('\0')}\0`;
 
-test('accepts new and changed test files', () => {
+test('accepts new and changed test files and shared fixtures', () => {
   const result = checkChanges(
-    parseStatus(status(' M backend/tests/router.test.ts', '?? backend/tests/health.test.ts', '?? frontend/src/features/todos/TodoBadge.test.tsx')),
+    parseStatus(
+      status(
+        ' M backend/tests/router.test.ts',
+        '?? backend/tests/health.test.ts',
+        '?? frontend/src/features/todos/TodoBadge.test.tsx',
+        ' M backend/tests/fixture.ts',
+        ' M frontend/src/test/todoFixture.ts',
+      ),
+    ),
   );
 
   assert.equal(result.ok, true);
-  assert.equal(result.changed.length, 3);
+  assert.equal(result.changed.length, 5);
 });
 
-test('rejects application code, config and tooling, and test files in the repository root', () => {
+test('rejects application code, config, tooling, the global test setup and test files in the repository root', () => {
   const result = checkChanges(
     parseStatus(
       status(' M backend/src/app.ts', '?? .opencode/agents/evil.md', ' M frontend/vite.config.ts', ' M scripts/run-tests.mjs', '?? root.test.ts', ' M frontend/src/test/setup.ts'),

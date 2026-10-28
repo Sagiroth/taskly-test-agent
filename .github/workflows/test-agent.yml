@@ -32,7 +32,11 @@ env:
 jobs:
   test-agent:
     # Drafts are skipped until ready for review. Fork PRs get no secrets, so they are skipped too.
-    if: github.event.pull_request.draft == false && github.event.pull_request.head.repo.full_name == github.repository
+    # The agent's own pushes can still create runs (waiting for approval); they never start the agent again.
+    if: >-
+      github.event.pull_request.draft == false &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:

@@ -8,10 +8,10 @@ description: Conventions and patterns for unit tests in frontend/ (React 19, Tan
 ## Iron rules
 
 - Tests live next to the source file: `TodoItem.tsx` -> `TodoItem.test.tsx`, `todos.ts` -> `todos.test.ts`.
-- Only `*.test.ts` and `*.test.tsx` files under `frontend/src/` may be created or changed.
+- Only `*.test.ts` and `*.test.tsx` files under `frontend/src/` and shared fixtures in `frontend/src/test/` may be created or changed. `src/test/setup.ts` is off limits: it runs for every test.
 - Query the DOM the way a user does: `getByRole` with an accessible name first, then `getByLabelText`, `getByText`. Avoid test ids and class names.
 - Interact with `userEvent.setup()`, not `fireEvent`.
-- Reuse `src/test/todoFixture.ts` (`todoFixture`) and override fields with spread: `{ ...todoFixture, completed: true }`.
+- Reuse `src/test/todoFixture.ts` (`todoFixture`) and override fields with spread: `{ ...todoFixture, completed: true }`. When the `Todo` type gains a required field, add it to the fixture.
 
 ## Running
 

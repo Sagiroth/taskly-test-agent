@@ -1,10 +1,13 @@
 import path from 'node:path';
 
-// Files the agent may create or change. Same patterns as `permission.edit` in .opencode/agents/test-engineer.md.
-const AGENT_WRITABLE = ['backend/tests/**', 'frontend/src/**/*.test.ts', 'frontend/src/**/*.test.tsx'];
+// Files the agent may create or change. Same patterns as `permission.edit` in .opencode/agents/test-engineer.md:
+// test files and shared fixtures, but not the global frontend setup, which runs for every test.
+const AGENT_WRITABLE = ['backend/tests/**', 'frontend/src/**/*.test.ts', 'frontend/src/**/*.test.tsx', 'frontend/src/test/**'];
+const AGENT_FORBIDDEN = ['frontend/src/test/setup.ts'];
 
 function isAgentWritable(file) {
-  return AGENT_WRITABLE.some((pattern) => path.posix.matchesGlob(file, pattern));
+  const matches = (patterns) => patterns.some((pattern) => path.posix.matchesGlob(file, pattern));
+  return matches(AGENT_WRITABLE) && !matches(AGENT_FORBIDDEN);
 }
 
 // Parses `git status --porcelain=v1 -z --untracked-files=all` into { status, path } entries.
